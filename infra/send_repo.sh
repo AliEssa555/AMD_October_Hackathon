@@ -35,8 +35,14 @@ ssh "${SSH_OPTS[@]}" "$HOST" true \
   || die "cannot ssh to $HOST. Is the Droplet up, and is your key the one you chose in the create form?"
 printf 'ok\n'
 
-# The leading ./ matters: plain `--exclude=data` silently matches nothing here, which
-# is how a 10 MB upload becomes a 256 MB one.
+# The leading ./ matters: plain `--exclude=data` silently matches nothing under GNU
+# tar, which is how a 10 MB upload becomes a 256 MB one.
+#
+# Run this with GNU tar (Git Bash), NOT with Windows tar.exe. Windows ships bsdtar,
+# whose --exclude matches *every* path component, so `--exclude=./data` there also
+# drops src/yolo_der/data and the upload arrives looking complete while the package is
+# quietly missing a subpackage. That cost a confusing ModuleNotFoundError on a billing
+# Droplet; the REQUIRED check below is what catches it either way.
 EXCLUDES=(
   --exclude=./.venv
   --exclude=./data
@@ -49,6 +55,41 @@ EXCLUDES=(
   --exclude=./.ruff_cache
   --exclude=./yolov8n.pt
 )
+
+# Every exclude is a chance to remove something load-bearing, and the failure shows up
+# only later as an import error on the Droplet, so the manifest is checked here.
+REQUIRED=(
+  ./pyproject.toml
+  ./src/yolo_der/__init__.py
+  ./src/yolo_der/train.py
+  ./src/yolo_der/trainer.py
+  ./src/yolo_der/tracking.py
+  ./src/yolo_der/data/prepare.py
+  ./src/yolo_der/data/download.py
+  ./src/yolo_der/data/severity.py
+  ./src/yolo_der/models/der.py
+  ./src/yolo_der/models/enhancenet.py
+  ./src/yolo_der/models/inject.py
+  ./configs/baseline.yaml
+  ./infra/bootstrap.sh
+  ./infra/run_job.sh
+  ./infra/in_container.sh
+)
+
+bold "Checking the archive manifest"
+MANIFEST="$(tar -tz "${EXCLUDES[@]}" -C "$REPO_ROOT" . 2>/dev/null)"
+absent=()
+for f in "${REQUIRED[@]}"; do
+  grep -qxF "$f" <<<"$MANIFEST" || absent+=("$f")
+done
+if ((${#absent[@]})); then
+  printf '  missing from the archive:\n'
+  printf '    %s\n' "${absent[@]}"
+  die "an exclude pattern removed files the package needs. If you are running this
+  under Windows tar.exe (bsdtar), use Git Bash instead: bsdtar applies --exclude to
+  every path component."
+fi
+printf '  all %s required paths present\n' "${#REQUIRED[@]}"
 
 bold "Sending $REPO_ROOT -> $HOST:$REMOTE_REPO"
 # Size first, so a surprise (a forgotten checkpoint, a stray dataset) is visible before

@@ -54,75 +54,107 @@ Then write the time down. Literally — a sticky note with the UTC time you clic
 Create. It is the only clock you have, and the bill is per hour of existence, not per
 hour of training.
 
-## 2. Get the code and the data onto it (free, ~10 minutes)
+## 2. Get the code onto it (free, ~1 minute)
 
-Two routes. **Route B is the one that works right now**, because nothing has been pushed
-to `AliEssa555/AMD_October_Hackathon` yet — `curl` of the raw file returns 404.
-
-### Route A — if the repo is pushed and public
-
-```bash
-ssh root@<droplet-ip>                    # accept the host key
-curl -fsSL https://raw.githubusercontent.com/AliEssa555/AMD_October_Hackathon/main/infra/bootstrap.sh -o bootstrap.sh
-ROBOFLOW_API_KEY=<key> bash bootstrap.sh
-```
-
-### Route B — send the repo up from this laptop
+The repo is private, so the Droplet cannot clone it. Send it up instead:
 
 ```bash
 bash infra/send_repo.sh root@<droplet-ip>     # from the repo root, on the laptop
-
-ssh root@<droplet-ip>
-ROBOFLOW_API_KEY=<key> bash /work/yolo-der/infra/bootstrap.sh
 ```
 
-`send_repo.sh` streams a tarball through the SSH connection, so there is nothing to
-install. It is about 800 KB: it leaves out `.venv`, `data`, `runs`, `mlruns` and the
-DVC cache, keeps `.git`, and then checks that the Droplet reports the same commit SHA
-as this laptop before telling you it worked.
+About 800 KB. It leaves out `.venv`, `data`, `runs`, `mlruns` and the DVC cache, keeps
+`.git`, checks that every file the package needs is actually in the archive, and then
+confirms the Droplet reports the same commit SHA as this laptop.
 
-`bootstrap.sh` finds the tree already in place and skips the clone. The excludes matter:
-`.venv` is Windows binaries that are useless there, and `data` is rebuilt on the Droplet
-anyway, which is far quicker than your upload.
+**Run it in Git Bash, not PowerShell.** Windows `tar.exe` is bsdtar, whose `--exclude`
+matches every path component, so `--exclude=./data` there silently also drops
+`src/yolo_der/data`. The manifest check catches it, but Git Bash avoids it entirely.
 
-### What it does either way
+If the repo is ever made public, `bootstrap.sh` will clone it instead; it probes the
+remote with `git ls-remote` first and only falls back to telling you to use `send_repo.sh`.
 
-Checks the GPU **first** and refuses to go on if `torch.version.hip` is empty or no
-device is visible — a non-GPU Droplet is worth discovering in minute one, not minute
-forty. Then installs dependencies, re-checks that pip did not quietly replace the ROCm
-torch build, rebuilds the dataset from Roboflow, and fetches `yolov8n.pt`.
+## 3. Bootstrap, inside the container (free, ~8 minutes)
 
-It prints the exact `run_job.sh` line to use next. It never starts training.
+**PyTorch is not on the host.** The AMD "PyTorch on ROCm" image ships a bare system
+`python3` with no torch at all; torch lives inside two preloaded Docker images, and
+`rocm/pytorch:latest` is the plain one (the other wraps the same torch in a Jupyter
+server). `infra/in_container.sh` starts that container with the GPU devices, `--ipc=host`,
+a 16 GB `/dev/shm` and `/work` bind-mounted, then runs whatever you give it inside:
+
+```bash
+ssh root@<droplet-ip>
+cd /work/yolo-der
+ROBOFLOW_API_KEY=<key> bash infra/in_container.sh bash infra/bootstrap.sh
+```
+
+`/work` being bind-mounted is what keeps `/work/yolo-der` and `/work/runs` identical on
+the host and in the container, so an Ultralytics checkpoint's absolute paths stay valid
+either side (spec gotcha 7).
+
+What bootstrap does, in order, each step fatal:
+
+1. Confirms the MI300X is visible **through the container** — the host seeing it via
+   `rocm-smi` does not prove the container can use it.
+2. Confirms `torch.version.hip` is non-empty and `torch.cuda.is_available()`.
+3. Installs dependencies, then **pins `numpy<2`**. The ROCm torch 2.6.0 in this image was
+   compiled against NumPy 1.x, and `numpy>=1.26` resolves to 2.2.6, which breaks every
+   array conversion the dataloader makes. It verifies the pin by round-tripping an array
+   through `torch.from_numpy`.
+4. Re-checks torch was not replaced by pip — a resolver pulling the CUDA wheel would turn
+   a $1.99/hr GPU run into a silent CPU run.
+5. Rebuilds ExDark from Roboflow (download, prepare, severity) and checks the splits using
+   the paths `data.yaml` names. Expect **train 4588 / val 1311 / test 655**.
+6. Fetches `yolov8n.pt`.
+
+It never starts training, and it is idempotent: re-running skips the dataset if it is
+already there.
+
+Expect two harmless things in the log: `MIOpen(HIP): Error [ParseContents] Duplicate ID
+(ignored)` lines, which are MIOpen's kernel database talking to itself, and a NumPy-2
+warning from any check that ran before the pin took effect.
 
 
-## 3. Train 💸
+## 4. Train 💸
 
 ```bash
 cd /work/yolo-der
 RUNS_DIR=/work/runs MAX_RUNTIME_HOURS=1 \
-  bash infra/run_job.sh --config baseline --epochs-override 3
+  bash infra/in_container.sh bash infra/run_job.sh --config baseline --epochs-override 3
 ```
 
-`run_job.sh` prints the run plan, the watchdog, and the worst-case cost, then starts.
-Add `--dry-run` to see that plan without training. Anything it does not recognise is
-passed through to `python -m yolo_der.train`, so `--fraction`, `--batch` and `--resume`
-work as normal.
+Always through `in_container.sh` — `run_job.sh` on the host would find no torch. Add
+`--dry-run` to see the plan and the worst-case cost without training. Anything
+`run_job.sh` does not recognise is passed through to `python -m yolo_der.train`, so
+`--fraction`, `--batch`, `--seed` and `--resume` work as normal.
 
-Run it under `tmux` if the connection is at all flaky:
+Measured on this hardware, 4588 training images at 448 px, batch 64:
+
+| | |
+|---|---|
+| One epoch, one process | **~5 s** steady state, ~11 s including validation |
+| VRAM per process | **3.8 GB of 192 GB** |
+| 3-epoch baseline smoke run, end to end | **61 s** |
+
+That is the number that matters for planning: a 100-epoch run is about ten minutes, so the
+whole ablation costs a couple of dollars rather than the tens the spec assumed. Recompute
+the Section 9.3 table from these, not from the spec's guesses.
+
+Use `tmux` if the connection is at all flaky:
 
 ```bash
-tmux new -s train     # then Ctrl-B D to detach, `tmux attach -t train` to come back
+tmux new -s train     # Ctrl-B D to detach, `tmux attach -t train` to come back
 ```
 
 What protects you while it runs:
 
 - `timeout` kills training at `MAX_RUNTIME_HOURS` (exit 124, and the banner says so).
 - An `EXIT` trap bundles logs, weights and the MLflow database on **every** path —
-  success, crash, timeout, Ctrl-C — before the banner prints, and tells you loudly if
-  the bundle came out empty.
-- The run refuses to start at all if no ROCm GPU is visible.
+  success, crash, timeout, Ctrl-C — before the banner prints, and says so loudly if the
+  bundle came out empty.
+- It refuses to start at all if no ROCm GPU is visible.
 
-## 4. Pull the results home (free)
+
+## 5. Pull the results home (free)
 
 From this laptop, **not** the Droplet:
 
@@ -136,7 +168,7 @@ and refuses to tell you the Droplet is expendable unless checkpoints or a `resul
 arrived. `--wait` tails the remote log while it waits, so you can start it before the
 run ends and come back to a Droplet that is already safe to destroy.
 
-## 5. Destroy it 💸 (this is the step that stops the bill)
+## 6. Destroy it 💸 (this is the step that stops the bill)
 
 <https://cloud.digitalocean.com/droplets> → the Droplet → **Destroy** → Destroy.
 

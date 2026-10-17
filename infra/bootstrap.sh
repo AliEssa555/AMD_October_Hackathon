@@ -2,11 +2,14 @@
 # Prepare a freshly created AMD MI300X GPU Droplet for training (spec 8.6, reshaped for
 # the manual-launch deviation recorded in CLAUDE.md).
 #
-# Run it ON THE DROPLET, as root, straight after the first SSH login:
+# Run it INSIDE the ROCm PyTorch container, via the host-side wrapper:
 #
-#   ssh root@<droplet-ip>
-#   curl -fsSL https://raw.githubusercontent.com/<owner>/yolo-der/main/infra/bootstrap.sh -o bootstrap.sh
-#   bash bootstrap.sh            # or: GIT_REF=some-branch bash bootstrap.sh
+#   bash /work/yolo-der/infra/in_container.sh bash infra/bootstrap.sh
+#
+# Not on the host. The AMD image ships no torch on the host at all -- `python3` there
+# is a bare system 3.12 -- and PyTorch lives only inside the preloaded
+# rocm/pytorch:latest image. in_container.sh explains the layout and bind-mounts /work
+# so the paths match on both sides.
 #
 # Idempotent: re-running it re-verifies everything and skips what is already done.
 #
@@ -32,14 +35,19 @@ die()  { printf '\033[31merror: %s\033[0m\n' "$1" >&2; exit 1; }
 # ------------------------------------------------------------------ hardware --
 # First, because everything after it is wasted money if this is not an MI300X.
 bold "GPU"
-command -v rocm-smi >/dev/null || die "rocm-smi missing -- wrong image? expected a ROCm image"
-rocm-smi --showproductname || die "rocm-smi failed"
-GPU_NAME="$(rocm-smi --showproductname --csv 2>/dev/null | awk -F, 'NR==2{print $2}')"
-printf 'product: %s\n' "${GPU_NAME:-unknown}"
-case "${GPU_NAME:-}" in
-  *MI300*) ok "MI300X present" ;;
-  *) printf '\033[33m! not an MI300X (%s) -- continuing, but check the plan\033[0m\n' "${GPU_NAME:-?}" ;;
-esac
+# rocm-smi is present in this image, but it is not the authority on whether *torch*
+# can use the GPU, so a failure here is a warning and the torch check below is fatal.
+if command -v rocm-smi >/dev/null; then
+  rocm-smi --showproductname || printf '  rocm-smi failed\n'
+  GPU_NAME="$(rocm-smi --showproductname --csv 2>/dev/null | awk -F, 'NR==2{print $2}')"
+  printf 'product: %s\n' "${GPU_NAME:-unknown}"
+  case "${GPU_NAME:-}" in
+    *MI300*) ok "MI300X present" ;;
+    *) printf '\033[33m! not an MI300X (%s)\033[0m\n' "${GPU_NAME:-?}" ;;
+  esac
+else
+  printf '  no rocm-smi here; relying on the torch check\n'
+fi
 
 bold "PyTorch / HIP"
 # The image ships torch built for ROCm. We must never reinstall torch: a pip resolver
@@ -61,12 +69,21 @@ ok "ROCm torch sees the GPU"
 TORCH_BEFORE="$(python3 -c 'import torch; print(torch.__version__)')"
 
 # ------------------------------------------------------------------- system ---
-bold "System packages"
-export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq
-# zstd for the results bundle, rsync for the pull home, git-lfs not needed.
-apt-get install -y -qq git rsync zstd jq >/dev/null
-ok "git rsync zstd jq"
+bold "Command-line tools"
+# Checked, not apt-installed. This container already has git, tar, zstd, awk and
+# timeout, and `apt-get update` inside it is a slow way to confirm that. Anything
+# genuinely missing is named here so the fix is obvious rather than a later crash.
+missing=()
+for cmd in git tar zstd awk timeout python3; do
+  command -v "$cmd" >/dev/null || missing+=("$cmd")
+done
+if ((${#missing[@]})); then
+  printf 'installing: %s\n' "${missing[*]}"
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -qq && apt-get install -y -qq "${missing[@]}" >/dev/null \
+    || die "could not install: ${missing[*]}"
+fi
+ok "git tar zstd awk timeout python3"
 
 mkdir -p "$WORK" "$RUNS"
 
@@ -97,7 +114,8 @@ ok "$REPO"
 bold "Python dependencies"
 # No venv: the image's system python owns the ROCm torch build, and a venv without
 # --system-site-packages would hide it. Install into it, never over torch.
-python3 -m pip install --quiet --upgrade pip
+# Deliberately NOT upgrading pip: this is a conda environment that owns torch, and
+# there is no reason to touch its package manager during a paid run.
 # ultralytics with --no-deps so its opencv-python requirement cannot replace the
 # headless wheel, and so its torch pin cannot touch the ROCm build. Everything it
 # actually needs at runtime is listed in the [train] extra (see pyproject.toml).
@@ -105,8 +123,22 @@ python3 -m pip install --quiet --no-deps "ultralytics==8.3.*"
 python3 -m pip install --quiet \
   "polars>=0.20.0" "mlflow==3.*" "boto3>=1.34" "opencv-python-headless>=4.9" \
   "pandas>=2.2" "pyarrow>=16.0" "scipy>=1.13" "matplotlib>=3.8" "roboflow>=1.1" \
-  "pyyaml>=6.0" "numpy>=1.26" "tqdm>=4.66" "psutil>=5.9" "py-cpuinfo"
+  "pyyaml>=6.0" "tqdm>=4.66" "psutil>=5.9" "py-cpuinfo"
 python3 -m pip install --quiet --no-deps -e "$REPO"
+
+# NumPy 1.x, pinned deliberately. The ROCm torch 2.6.0 in this image was compiled
+# against NumPy 1.x, and `pip install numpy>=1.26` resolves to 2.2.6, which makes torch
+# print "Failed to initialize NumPy" and then fail on any array conversion -- i.e. on
+# every image the dataloader touches. The local CPU wheel is fine with NumPy 2, so this
+# constraint belongs here, on the Droplet, not in pyproject.toml.
+python3 -m pip install --quiet "numpy<2" || die "could not install numpy<2"
+python3 - <<'PY' || die "torch cannot use numpy; training would fail on the first batch"
+import numpy, torch
+x = torch.from_numpy(numpy.zeros((2, 2), dtype="float32"))
+assert x.sum().item() == 0.0
+print(f"  numpy {numpy.__version__} usable from torch {torch.__version__}")
+PY
+ok "numpy pinned below 2 and verified through torch"
 ok "installed"
 
 TORCH_AFTER="$(python3 -c 'import torch; print(torch.__version__)')"
@@ -120,9 +152,9 @@ bold "Ultralytics settings"
 # Both built-in loggers off: yolo_der.tracking owns MLflow (its metric-name sanitising and
 # MLflow-3 model registration), and DVC has no remote here.
 python3 - <<'PY'
-from ultralytics.utils import SETTINGS, settings
-settings.update({"mlflow": False, "dvc": False, "sync": False})
-print("mlflow:", SETTINGS.get("mlflow"), "dvc:", SETTINGS.get("dvc"), "sync:", SETTINGS.get("sync"))
+from ultralytics import settings  # package level; ultralytics.utils has no `settings`
+settings.update({"mlflow": False, "dvc": False})
+print("mlflow:", settings.get("mlflow"), "dvc:", settings.get("dvc"))
 PY
 ok "built-in loggers disabled"
 
@@ -142,15 +174,22 @@ else
   python3 -m yolo_der.data.severity --data data/prepared --out data/severity.csv --bins data/bins
   ok "download + prepare + severity"
 fi
-python3 - <<PY
-import yaml, pathlib
+# The split directories are read from data.yaml, not assumed. The Roboflow export
+# calls the validation split "valid", so the obvious `data/prepared/val` check failed
+# on a dataset that was in fact perfectly fine -- a false alarm is expensive here,
+# because the natural reaction to it is to rebuild a 6,554-image dataset.
+python3 - <<PY || die "the prepared dataset is not usable"
+import pathlib, yaml
+
 d = pathlib.Path("$REPO/data/prepared")
 doc = yaml.safe_load((d / "data.yaml").read_text(encoding="utf-8"))
-for split in ("train", "val", "test"):
-    n = len(list((d / split / "images").glob("*")))
-    print(f"{split:5s} {n:5d} images")
-    assert n, f"{split} is empty"
-print("nc", doc["nc"], doc["names"])
+for key in ("train", "val", "test"):
+    rel = doc[key]
+    images = sorted((d / rel).glob("*"))
+    labels = sorted((d / rel.replace("images", "labels")).glob("*.txt"))
+    print(f'  {key:5s} {rel:16s} {len(images):5d} images  {len(labels):5d} labels')
+    assert images, f'{key} ({rel}) is empty'
+print('  nc', doc['nc'], doc['names'])
 PY
 ok "splits non-empty"
 

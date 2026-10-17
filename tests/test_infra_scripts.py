@@ -11,11 +11,28 @@ from pathlib import Path
 import pytest
 
 INFRA = Path(__file__).resolve().parents[1] / "infra"
-SCRIPTS = ("bootstrap.sh", "run_job.sh", "fetch_results.sh", "send_repo.sh")
+SCRIPTS = (
+    "bootstrap.sh",
+    "run_job.sh",
+    "fetch_results.sh",
+    "send_repo.sh",
+    "in_container.sh",
+)
 
 
 def read(name: str) -> str:
     return (INFRA / name).read_text(encoding="utf-8")
+
+
+def code_lines(name: str) -> str:
+    """The script with comment lines stripped.
+
+    Needed because these scripts explain their own pitfalls in comments, so a naive
+    `"--group-add render" not in body` trips over the comment saying not to use it.
+    """
+    return chr(10).join(
+        line for line in read(name).splitlines() if not line.lstrip().startswith("#")
+    )
 
 
 @pytest.mark.parametrize("name", SCRIPTS)
@@ -226,3 +243,89 @@ class TestTransferWithoutRsync:
         body = read("send_repo.sh")
         for forbidden in ("yolo_der.train", "poweroff", "droplet delete"):
             assert forbidden not in body
+
+
+class TestContainerWrapper:
+    """The AMD image has no torch on the host; PyTorch is only inside the containers.
+
+    Every assertion here corresponds to something that actually failed on the live
+    Droplet during the Phase 4 run.
+    """
+
+    body = property(lambda self: read("in_container.sh"))
+
+    def test_it_does_not_pass_group_add_render(self):
+        """Docker resolves group names inside the image, which has no `render` group.
+
+        It then refuses the whole run rather than skipping the flag. Probing the host
+        for the group was the wrong fix, for the same reason.
+        """
+        code = code_lines("in_container.sh")
+        assert "--group-add render" not in code
+        assert "--group-add video" in code
+
+    def test_it_requests_the_rocm_devices(self):
+        for flag in ("--device=/dev/kfd", "--device=/dev/dri"):
+            assert flag in self.body
+
+    def test_it_raises_shm_for_dataloader_workers(self):
+        """The 64 MB docker default makes workers die with an opaque Bus error."""
+        assert "--ipc=host" in self.body
+        assert "--shm-size" in self.body
+
+    def test_it_bind_mounts_work_so_paths_match_host_and_container(self):
+        """Ultralytics writes absolute paths into last.pt (gotcha 7)."""
+        assert '-v "$WORK:$WORK"' in self.body
+
+    def test_the_container_state_probe_strips_whitespace(self):
+        """`docker inspect` output carried a newline, so neither case arm matched.
+
+        The script then tried to remove a container that did not exist.
+        """
+        assert "tr -d '[:space:]'" in self.body
+        assert "state=absent" in self.body
+
+    def test_it_verifies_the_gpu_through_the_container(self):
+        """The host seeing an MI300X does not prove the container can use it."""
+        assert "torch.cuda.is_available()" in self.body
+        assert "torch.version.hip" in self.body
+
+    def test_it_keeps_stdin_attached_for_the_exit_trap(self):
+        """Ctrl-C must reach the process so run_job.sh still bundles artifacts."""
+        assert "docker exec -i" in self.body
+
+
+class TestSendRepoManifest:
+    """A bad exclude removes something load-bearing and only fails later, remotely."""
+
+    body = property(lambda self: read("send_repo.sh"))
+
+    def test_it_checks_required_paths_before_sending(self):
+        assert "REQUIRED=(" in self.body
+        assert "Checking the archive manifest" in self.body
+
+    def test_the_required_list_covers_the_data_subpackage(self):
+        """`--exclude=./data` under bsdtar also dropped src/yolo_der/data.
+
+        On the Droplet that surfaced as ModuleNotFoundError: No module named
+        'yolo_der.data', long after the upload reported success.
+        """
+        for path in (
+            "./src/yolo_der/data/prepare.py",
+            "./src/yolo_der/data/download.py",
+            "./src/yolo_der/data/severity.py",
+        ):
+            assert path in self.body
+
+    def test_every_required_path_exists_in_this_repo(self):
+        """A stale entry would make the guard fail on a healthy archive."""
+        array = self.body.split("REQUIRED=(")[1].split(")")[0]
+        root = INFRA.parent
+        for line in array.splitlines():
+            line = line.strip()
+            if not line.startswith("./"):
+                continue
+            assert (root / line[2:]).exists(), f"REQUIRED names a missing path: {line}"
+
+    def test_it_warns_about_windows_bsdtar(self):
+        assert "bsdtar" in self.body
