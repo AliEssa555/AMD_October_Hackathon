@@ -1,0 +1,5 @@
+[core]
+    analytics = false
+    remote = local
+['remote "local"']
+    url = C:/Users/PC/Downloads/amd_october/.dvc-store

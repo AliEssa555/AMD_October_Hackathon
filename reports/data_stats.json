@@ -1,0 +1,81 @@
+{
+  "nc": 12,
+  "names": [
+    "Bicycle",
+    "Boat",
+    "Bottle",
+    "Bus",
+    "Cat",
+    "Cup",
+    "Motorbike",
+    "People",
+    "Table",
+    "car",
+    "chair",
+    "dog"
+  ],
+  "splits": {
+    "train": {
+      "images": 4588,
+      "instances": 15499,
+      "background_images": 2,
+      "instances_per_class": {
+        "Bicycle": 800,
+        "Boat": 1050,
+        "Bottle": 1071,
+        "Bus": 504,
+        "Cat": 655,
+        "Cup": 1043,
+        "Motorbike": 765,
+        "People": 4462,
+        "Table": 1192,
+        "car": 2184,
+        "chair": 1721,
+        "dog": 52
+      }
+    },
+    "valid": {
+      "images": 1311,
+      "instances": 4297,
+      "background_images": 0,
+      "instances_per_class": {
+        "Bicycle": 225,
+        "Boat": 297,
+        "Bottle": 321,
+        "Bus": 150,
+        "Cat": 188,
+        "Cup": 290,
+        "Motorbike": 165,
+        "People": 1146,
+        "Table": 360,
+        "car": 605,
+        "chair": 535,
+        "dog": 15
+      }
+    },
+    "test": {
+      "images": 655,
+      "instances": 2126,
+      "background_images": 1,
+      "instances_per_class": {
+        "Bicycle": 116,
+        "Boat": 159,
+        "Bottle": 135,
+        "Bus": 61,
+        "Cat": 90,
+        "Cup": 180,
+        "Motorbike": 106,
+        "People": 602,
+        "Table": 156,
+        "car": 296,
+        "chair": 217,
+        "dog": 8
+      }
+    }
+  },
+  "totals": {
+    "images": 6554,
+    "instances": 21922
+  },
+  "dropped": 0
+}

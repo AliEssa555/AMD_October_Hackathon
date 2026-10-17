@@ -1,0 +1,87 @@
+schema: '2.0'
+stages:
+  download:
+    cmd: python -m yolo_der.data.download --out data/raw
+    deps:
+    - path: src/yolo_der/data/download.py
+      hash: md5
+      md5: ad4b14cf59cdbbd2d7b68f1dd3a1dab6
+      size: 5062
+    params:
+      params.yaml:
+        data.roboflow:
+          workspace: project-h68de
+          project: exdark-kd37x
+          version: 2
+          format: yolov8
+    outs:
+    - path: data/raw
+      hash: md5
+      md5: 8df28d7299a320cdcbd6da4109dfeb42.dir
+      size: 253661367
+      nfiles: 13111
+  prepare:
+    cmd: python -m yolo_der.data.prepare --raw data/raw --out data/prepared
+    deps:
+    - path: data/raw
+      hash: md5
+      md5: 8df28d7299a320cdcbd6da4109dfeb42.dir
+      size: 253661367
+      nfiles: 13111
+    - path: src/yolo_der/data/prepare.py
+      hash: md5
+      md5: 8c1e2ef401fc2ffd7821c9b115d942f1
+      size: 10638
+    params:
+      params.yaml:
+        data.seed: 0
+        data.test_fraction_if_missing: 0.1
+    outs:
+    - path: data/prepared
+      hash: md5
+      md5: 97b713cb6dba68b094d2e476475b88df.dir
+      size: 253660060
+      nfiles: 13110
+    - path: reports/class_hist.png
+      hash: md5
+      md5: 4f7eb39f609811a4ce50a25c3090314b
+      size: 29966
+    - path: reports/data_stats.json
+      hash: md5
+      md5: 3f7a9ea1b44c1218c343192ea6af0f25
+      size: 1557
+  severity:
+    cmd: python -m yolo_der.data.severity --data data/prepared --out 
+      data/severity.csv --bins data/bins
+    deps:
+    - path: data/prepared
+      hash: md5
+      md5: 97b713cb6dba68b094d2e476475b88df.dir
+      size: 253660060
+      nfiles: 13110
+    - path: src/yolo_der/data/severity.py
+      hash: md5
+      md5: 90061d2b34f033941330b7eb5d90be70
+      size: 12047
+    params:
+      params.yaml:
+        severity:
+          tau: 0.3
+          dcp_patch: 15
+          dcp_omega: 0.95
+          dcp_top_fraction: 0.001
+          dcp_resize_long_side: 640
+    outs:
+    - path: data/bins
+      hash: md5
+      md5: 43f432633306b4d7f646f5cc06318232.dir
+      size: 54648
+      nfiles: 8
+    - path: data/severity.csv
+      hash: md5
+      md5: 59523323d407787503df746ce67a5739
+      size: 774890
+    - path: reports/severity_hist.png
+      hash: md5
+      md5: d8733da84019344d879b31992ad0709c
+      size: 51694

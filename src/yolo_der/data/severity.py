@@ -13,8 +13,24 @@ CVPR 2009) and say so in the write-up:
   are then applied to every split, so the per-bin evaluation tables are comparable.
   ``q1`` is the darkest quartile.
 
-Known and expected: on night images the dark channel misreads darkness as haze, so ``s_fog``
-is noisy on ExDark. That is a finding to report, not a bug to fix (gotcha 16).
+**Measured result on ExDark (6,554 images, 17 Oct 2026) -- and it is not what spec 6.3
+predicted.** The spec expected the dark channel to *misread darkness as haze*, giving noisy
+and inflated ``s_fog``. The opposite happens:
+
+* ``s_dark``: mean 0.52, and 94.2% of images have ``mu_Y <= tau``. As expected -- ExDark is
+  overwhelmingly dark.
+* ``s_fog``: mean 0.07, and only **7 images (0.1%)** reach the paper's ``s_fog >= 0.5``
+  "foggy" threshold. Spearman ``rho(mu_Y, s_fog) = +0.51`` -- *brighter* images score as
+  **more** hazy.
+
+The reason is in the prior itself. DCP assumes a haze-free patch has some pixel near 0 in
+some channel; a dark image satisfies that trivially, so the dark channel stays near 0, the
+transmission ``t`` stays near 1, and ``s_fog`` collapses towards 0. DCP does not confuse
+darkness with haze -- it confuses darkness with *clarity*.
+
+Consequence for this project: ``s_fog`` carries almost no usable signal on ExDark and is
+**not** used for conditioning or binning. ``s_dark`` and its quartiles do all the work.
+This is reported as a finding, not patched (gotcha 16).
 
 Run as a DVC stage::
 
