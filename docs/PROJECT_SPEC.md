@@ -8,7 +8,7 @@
 
 These override anything else in this document.
 
-1. **Never create a GPU Droplet without explicit user confirmation in chat.** GPU time is the scarce resource (~30 hours total). Before every GPU launch, print the run plan and estimated cost (`hours × $2.59`) and wait for an explicit "yes".
+1. **Never create a GPU Droplet without explicit user confirmation in chat.** GPU time is the scarce resource (~50 hours total at the verified $1.99/hr). Before every GPU launch, print the run plan and estimated cost (`hours × $1.99`) and wait for an explicit "yes".
 2. **A powered-off GPU Droplet is still billed.** Only *destroying* it stops billing. Every GPU launch path must (a) destroy the Droplet when training ends, (b) have a max-runtime watchdog, and (c) be covered by the reaper (Section 8.5).
 3. **Never commit secrets.** Tokens and keys live in `.env` (gitignored) locally and in GitHub Actions secrets in CI. The very first commit's `.gitignore` must include `.env`, `.env.*`, `*.pem`, `.dvc/config.local`, `mlruns/`, `runs/`, `*.db`.
 4. **Nothing important lives on the GPU Droplet.** Datasets come from Spaces; checkpoints, metrics, and plots go to MLflow (artifacts in Spaces) before the Droplet is destroyed.
@@ -89,7 +89,14 @@ ExDark ablation (Fig. 6, approximate): YOLOv12 ≈ 81.7 mAP50 → +DER ≈ 82.0 
 ### 3.1 Prices (from DigitalOcean docs, verified Oct 2026)
 | Resource | Price | Notes |
 |---|---|---|
-| AMD MI300X GPU Droplet, 1 GPU (192 GB HBM) | $2.59/hr | Per-second billing, 60 s minimum. **Billed while powered off.** |
+| AMD MI300X GPU Droplet, 1 GPU (192 GB HBM) | ~~$2.59/hr~~ **$1.99/hr** | Per-second billing, 60 s minimum. **Billed while powered off.** |
+
+> **Price correction, 17 Oct 2026.** The live `devcloud.amd.com` create form quotes
+> **$1.99/GPU/hr** for `gpu-mi300x1-192gb-devcloud`, not the $2.59 assumed when this spec
+> was written. The $100 credit therefore buys ~50 GPU-hours, not ~38. Every cost print and
+> budget figure below that still says $2.59 is an over-estimate; `GPU_HOURLY_USD` in
+> `.env` is the single source of truth for scripts.
+
 | AMD MI300X, 8 GPUs | $20.72/hr | Out of scope unless the owner explicitly asks. |
 | Spaces Object Storage | $5/month, prorated hourly | 250 GiB storage + 1 TiB egress included. Spaces → Droplet traffic in the same region is free. |
 | CPU Droplet (~1 vCPU / 2 GB) | ~$12/month, per second | Hosts MLflow + API. Verify the slug and price with `doctl compute size list`. |

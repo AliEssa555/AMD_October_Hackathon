@@ -6,15 +6,36 @@ Tick the boxes as you go and tell me when a section is done; I'll verify each on
 
 ---
 
-## A. Find the account that actually holds the $100 credit  ⚠️ do this first
+## Verified from the live console, 17 Oct 2026
+
+Read off the `devcloud.amd.com/gpus/new` page you sent, so these no longer need checking:
+
+| Thing | Value |
+|---|---|
+| Team | `My AMD Team`, param `bb4e16` |
+| Project | `My AMD Home`, `fa26874e-0012-4b24-8af4-24d2a2a1de3a` |
+| Credit | **$100.00 of $100.00 remaining**, "expiring in 2 days" |
+| Region | `atl1` (Atlanta DC1). `ric1` greyed out: *GPUs currently unavailable* |
+| Size | `gpu-mi300x1-192gb-devcloud`, **$1.99/GPU/hr**. The x8 plan is greyed out |
+| Price | **$1.99/hr, not $2.59** — the credit buys ~50 GPU-hours |
+| SSH key | one key present, `test`, id `60164577` |
+| Paywall | feature flag `amd_no_paywall: true` — creation is **not** gated on a card |
+| Spot | offered, and ATL1 is a supported spot region |
+| Startup scripts | offered (this is the cloud-init hook the launcher needs) |
+
+The console also warns: *"AMD GPU Droplets will be destroyed after credit is used if no
+payment method is applied"* and *"AMD credit only covers GPU access. All other services
+would be charged to your payment method."* So Spaces and the CPU hub Droplet are **not**
+covered by the credit — that's a real, if small, out-of-pocket cost.
+
+---
+
+## A. ~~Find the account that actually holds the $100 credit~~ ✅ done
 
 AMD Developer Cloud runs on DigitalOcean, but the credit may sit in a **separate team or
 console** from your personal account. Creating resources in the wrong team spends real money.
 
-- [ ] Log in and open **Billing**. Note which team name shows the $100 credit and its expiry
-      (should be 19 Oct 2026).
-- [ ] If you have more than one team, switch between them and confirm which one has it.
-- [ ] Tell me the team name.
+- [x] `My AMD Team` holds the full $100, expiring 19 Oct 2026.
 
 ## B. API tokens
 
@@ -50,10 +71,9 @@ yourself and just tell me "done" — I only ever need to run commands, not see t
 ## E. Spend guardrails
 
 - [ ] Billing → **Spend alerts** → set an alert at **$85**.
-- [ ] Check whether the account has a **payment method** on file. The billing page showed
-      none. DigitalOcean may require one before it will create GPU Droplets, and anything
-      beyond the $100 credit (or after 19 Oct) is charged to it. Decide now whether you're
-      comfortable adding one.
+- [x] Payment method: still none (sidebar Billing shows *Action Needed*), but the
+      `amd_no_paywall` flag means GPU Droplet creation is **not** blocked by that. Nothing
+      to do unless you want Spaces/the hub Droplet, which the credit does not cover.
 
 ## F. Roboflow API key  ← needed today, for Phase 1
 
