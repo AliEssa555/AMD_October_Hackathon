@@ -25,6 +25,34 @@
 # across both (gotcha 7).
 set -uo pipefail
 
+# Environment that must cross into the container. `docker run -e` only applies when
+# the container is CREATED, and this script deliberately reuses a running one -- so
+# anything the caller sets per-run has to be passed on `docker exec` too. Missing that
+# made MAX_RUNTIME_HOURS=1 silently become the 6h default inside the container, i.e.
+# the watchdog that caps spend was reading a different number from the one printed to
+# the owner. Found on the live Droplet: the run plan said 6h x $1.99 = $11.94.
+FORWARD=(
+  MAX_RUNTIME_HOURS
+  RUNS_DIR
+  BUNDLE_DIR
+  MLFLOW_TRACKING_URI
+  MLFLOW_EXPERIMENT_NAME
+  GPU_HOURLY_USD
+  RESULTS_S3_URI
+  ROBOFLOW_API_KEY
+  PYTHONUNBUFFERED
+)
+
+# Build the -e flags from whatever is actually set, so an unset variable keeps the
+# script's own default instead of being forced to an empty string.
+env_flags() {
+  local out=() name
+  for name in "${FORWARD[@]}"; do
+    if [[ -n "${!name-}" ]]; then out+=(-e "$name=${!name}"); fi
+  done
+  printf '%s\n' "${out[@]}"
+}
+
 IMAGE="${YOLO_DER_IMAGE:-rocm/pytorch:latest}"
 NAME="${YOLO_DER_CONTAINER:-yolo-der}"
 WORK=/work
@@ -47,6 +75,8 @@ command -v docker >/dev/null || die "docker not found -- is this the AMD ROCm im
 # reports the MI300X and torch.cuda.is_available() is True.
 
 start_container() {
+  local RUN_ENV=()
+  mapfile -t RUN_ENV < <(PYTHONUNBUFFERED=1 env_flags)
   bold "Starting container $NAME from $IMAGE"
   docker run -d --name "$NAME" \
     --device=/dev/kfd --device=/dev/dri \
@@ -54,10 +84,7 @@ start_container() {
     --ipc=host --shm-size 16G \
     --security-opt seccomp=unconfined \
     -v "$WORK:$WORK" -w "$REPO" \
-    -e "PYTHONUNBUFFERED=1" \
-    -e "RUNS_DIR=${RUNS_DIR:-$WORK/runs}" \
-    -e "MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI:-sqlite:///$WORK/runs/mlflow.db}" \
-    -e "ROBOFLOW_API_KEY=${ROBOFLOW_API_KEY:-}" \
+    "${RUN_ENV[@]}" \
     "$IMAGE" sleep infinity >/dev/null \
     || die "could not start the container"
 }
@@ -98,4 +125,7 @@ fi
 bold "Running in $NAME: $*"
 # -i keeps stdin attached so a Ctrl-C reaches the process and its EXIT trap still fires,
 # which is what gets the artifacts bundled on an interrupted run (hard rule 0.4).
-exec docker exec -i -w "$REPO" "$NAME" "$@"
+EXEC_ENV=()
+mapfile -t EXEC_ENV < <(env_flags)
+printf '  forwarding: %s\n' "$(printf '%s ' "${EXEC_ENV[@]}" | sed 's/-e //g')"
+exec docker exec -i -w "$REPO" "${EXEC_ENV[@]}" "$NAME" "$@"

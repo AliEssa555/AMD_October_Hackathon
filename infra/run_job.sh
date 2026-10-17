@@ -78,6 +78,12 @@ bundle_results() {
 
   # --ignore-failed-read: a timeout can leave a half-written checkpoint, and a bundle
   # missing one file beats no bundle at all. `reports` may legitimately not exist yet.
+  # `save_period: 1` in configs/base.yaml writes weights/epoch<N>.pt every epoch, which
+  # is 100 x 6.2 MB per run: a 1.2 GB bundle measured on the first 100-epoch baseline,
+  # and 8.4 GB for a seven-variant ablation over a home connection. Those snapshots
+  # exist so a killed run can resume *on this Droplet*, so they are resume state, not
+  # results -- last.pt and best.pt are what matter at home, and both are kept.
+  local exclude=(--exclude='weights/epoch*.pt')
   local sources=(-C "$RUNS_DIR" .)
   [[ -d "$REPO_ROOT/logs" ]] && sources+=(-C "$REPO_ROOT" logs)
   [[ -d "$REPO_ROOT/reports" ]] && sources+=(-C "$REPO_ROOT" reports)
@@ -86,11 +92,11 @@ bundle_results() {
   # without zstd exits non-zero having already created an empty file, which looks exactly
   # like a successful bundle to anyone reading `ls -lh`.
   if command -v zstd >/dev/null 2>&1; then
-    tar --ignore-failed-read -I 'zstd -3 -T0' -cf "$BUNDLE" "${sources[@]}" 2>/dev/null
+    tar --ignore-failed-read "${exclude[@]}" -I 'zstd -3 -T0' -cf "$BUNDLE" "${sources[@]}" 2>/dev/null
   else
     BUNDLE="${BUNDLE%.tar.zst}.tar.gz"
     printf '  zstd not installed, falling back to gzip\n'
-    tar --ignore-failed-read -czf "$BUNDLE" "${sources[@]}" 2>/dev/null
+    tar --ignore-failed-read "${exclude[@]}" -czf "$BUNDLE" "${sources[@]}" 2>/dev/null
   fi
 
   # This check is what stands between the owner and destroying a Droplet whose results

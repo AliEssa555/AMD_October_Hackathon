@@ -329,3 +329,37 @@ class TestSendRepoManifest:
 
     def test_it_warns_about_windows_bsdtar(self):
         assert "bsdtar" in self.body
+
+
+class TestWatchdogCrossesTheContainerBoundary:
+    """The printed cost and the enforced cap must be the same number.
+
+    `docker run -e` applies only when a container is created, and in_container.sh reuses
+    a running one, so a per-run `MAX_RUNTIME_HOURS=1` never reached run_job.sh: it printed
+    "6h x $1.99 = $11.94" while the owner had asked for one hour. Caught on the live
+    Droplet, which is the expensive place to find it.
+    """
+
+    body = property(lambda self: read("in_container.sh"))
+
+    def test_max_runtime_hours_is_forwarded(self):
+        assert "MAX_RUNTIME_HOURS" in self.body.split("FORWARD=(")[1].split(")")[0]
+
+    def test_the_env_is_forwarded_on_exec_not_only_on_run(self):
+        code = code_lines("in_container.sh")
+        exec_line = next(line for line in code.splitlines() if line.startswith("exec docker exec"))
+        assert "EXEC_ENV" in exec_line, exec_line
+
+    def test_every_cost_shaping_variable_is_forwarded(self):
+        """Anything run_job.sh reads from the environment to size or price a run."""
+        forwarded = self.body.split("FORWARD=(")[1].split(")")[0]
+        for name in ("MAX_RUNTIME_HOURS", "GPU_HOURLY_USD", "RUNS_DIR", "BUNDLE_DIR"):
+            assert name in forwarded, name
+
+    def test_unset_variables_are_not_forwarded_as_empty(self):
+        """An empty -e would override run_job.sh's own default with the empty string."""
+        assert '[[ -n "${!name-}" ]]' in self.body
+
+    def test_it_reports_what_it_forwarded(self):
+        """So the owner can see the cap in force, not just the one they typed."""
+        assert "forwarding:" in self.body
