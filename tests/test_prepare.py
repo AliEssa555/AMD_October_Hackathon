@@ -151,7 +151,11 @@ def test_compute_stats_counts_instances_and_backgrounds():
 
 def test_data_yaml_shape(tmp_path):
     doc = yaml.safe_load(write_data_yaml(tmp_path, NAMES).read_text(encoding="utf-8"))
-    assert doc["path"] == "data/prepared"
+    # `path:` is deliberately absent: a relative one is resolved against the cwd and then
+    # against ~/datasets, so it silently breaks any run launched from elsewhere, and an
+    # absolute one would not survive the trip to the GPU Droplet. train.py pins it at
+    # launch time instead (see test_train_cli.py::test_materialise_data_yaml_pins_an_absolute_path).
+    assert "path" not in doc
     assert (doc["train"], doc["val"], doc["test"]) == (
         "train/images",
         "valid/images",

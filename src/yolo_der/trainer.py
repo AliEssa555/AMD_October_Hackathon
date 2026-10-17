@@ -39,14 +39,19 @@ NO_DECAY_SUFFIXES = ("lambda_der", "lambda_enh")
 class YoloDERTrainer(DetectionTrainer):
     """Ultralytics detection trainer that builds and trains a :class:`YoloDERModel`.
 
-    The ``modules`` config travels on ``self.args.der_cfg``, set by ``train.py`` before the
-    trainer is constructed, because Ultralytics owns the constructor signature.
+    ``train.py`` assigns :attr:`der_cfg` on the instance after construction and before
+    ``train()``, since Ultralytics owns the constructor signature.
+
+    It must **not** be stashed on ``self.args``: ``DetectionValidator`` is built with a
+    copy of ``self.args``, and its ``__init__`` passes that copy back through ``get_cfg``,
+    which runs ``check_dict_alignment`` and aborts on any key that is not a documented YOLO
+    argument -- so a ``der_cfg`` attribute there kills the run at validator-construction
+    time with "'der_cfg' is not a valid YOLO argument". A plain instance attribute with a
+    class-level default sidesteps the config system entirely.
     """
 
-    @property
-    def der_cfg(self) -> ModulesConfig | None:
-        """The resolved ``modules`` config, or ``None`` for the baseline."""
-        return getattr(self.args, "der_cfg", None)
+    #: Resolved ``modules`` config, or ``None`` for the baseline.
+    der_cfg: ModulesConfig | None = None
 
     def get_model(self, cfg: Any = None, weights: Any = None, verbose: bool = True) -> YoloDERModel:
         """Build the model, honouring the load-order rule of spec 7.4 / gotcha 3.
@@ -113,30 +118,94 @@ class YoloDERTrainer(DetectionTrainer):
         model._load_balance_weight = float(der_cfg.load_balance)
 
     @staticmethod
+    def _class_head_prefix(model: YoloDERModel) -> str:
+        """State-dict prefix of the Detect head's classification branch.
+
+        Its channel width is a function of ``nc``, so these are the only keys that may
+        legitimately fail to transfer from a differently-classed checkpoint.
+        """
+        head = model.model[-1]
+        return f"model.{getattr(head, 'i', len(model.model) - 1)}.cv3."
+
+    @staticmethod
     def _load_and_verify(model: YoloDERModel, weights: Any) -> None:
-        """Load weights and fail loudly on a partial transfer (gotcha 3)."""
-        before = sum(1 for _ in model.state_dict())
+        """Load weights and fail loudly on a *meaningful* partial transfer (gotcha 3).
+
+        Ultralytics' ``.load()`` prints "Transferred X/Y items" and never raises, so a
+        silent shortfall would mean the modules trained from scratch and the GPU hours were
+        wasted. But not every shortfall is a bug, and the distinction matters:
+
+        * **Absent by name** -- the real failure. Injection renames ``model.4.cv1...`` to
+          ``model.4.layer.cv1...``, so loading in the wrong order makes the backbone keys
+          vanish. Always fatal.
+        * **Present but shape-mismatched** -- expected exactly once. ``yolov8n.pt`` is
+          COCO-pretrained with ``nc=80`` and ExDark has 12, so the Detect head's
+          classification branch cannot transfer. Verified against Ultralytics 8.3.253:
+          loading ``yolov8n.pt`` into an ``nc=12`` model leaves 0 keys absent by name and
+          36 shape-mismatched, all under ``model.22.cv3.``. Fatal only outside that branch.
+        """
         model.load(weights)
-        # Ultralytics' .load() prints "Transferred X/Y items". It does not raise on a
-        # partial transfer, so a silent 300/355 would mean the modules started from
-        # scratch and the GPU hours are wasted. Re-check the overlap ourselves.
         incoming = YoloDERTrainer._state_dict_of(weights) or {}
+        if not incoming:
+            return
+
         own = model.state_dict()
-        matched = sum(1 for k, v in incoming.items() if k in own and own[k].shape == v.shape)
-        if incoming and matched < len(incoming):
+        head = YoloDERTrainer._class_head_prefix(model)
+        absent = [k for k in incoming if k not in own]
+        mismatched = [k for k in incoming if k in own and own[k].shape != incoming[k].shape]
+        unexpected = [k for k in mismatched if not k.startswith(head)]
+
+        if absent or unexpected:
+            detail = []
+            if absent:
+                detail.append(f"{len(absent)} absent by name (e.g. {absent[:3]})")
+            if unexpected:
+                detail.append(
+                    f"{len(unexpected)} shape-mismatched outside the class head "
+                    f"(e.g. {unexpected[:3]})"
+                )
             raise RuntimeError(
-                f"partial weight transfer: {matched}/{len(incoming)} incoming keys matched "
-                f"({before} keys in the model). Check the inject/load order (spec 7.4)."
+                "partial weight transfer: "
+                + "; ".join(detail)
+                + f". {len(incoming)} incoming keys, {len(own)} in the model. "
+                "Check the inject/load order (spec 7.4, gotcha 3)."
             )
 
-    def set_model_attributes(self) -> None:
-        """Extend ``loss_names`` when an E1 regulariser adds a loss column."""
-        super().set_model_attributes()
+        transferred = len(incoming) - len(mismatched)
+        LOGGER.info(
+            f"yolo_der: transferred {transferred}/{len(incoming)} pretrained keys; "
+            f"{len(mismatched)} skipped in the nc-dependent class head ({head}*) as expected"
+        )
+
+    def _extend_loss_names(self) -> None:
+        """Append ``ent_loss`` when an E1 regulariser adds a loss column.
+
+        ``YoloDERModel.loss`` appends one element to both halves of Ultralytics'
+        ``(loss, loss_items)`` tuple, and ``label_loss_items`` names the columns from
+        ``loss_names``; a mismatch silently mislabels the progress table and results.csv.
+        """
         model = self.model
-        if getattr(model, "has_extra_loss", False) and "ent_loss" not in self.loss_names:
-            # YoloDERModel.loss appends one element to both halves of Ultralytics'
-            # (loss, loss_items) tuple; label_loss_items names columns from loss_names.
+        if getattr(model, "has_extra_loss", False) and "ent_loss" not in tuple(self.loss_names):
             self.loss_names = (*self.loss_names, "ent_loss")
+
+    def set_model_attributes(self) -> None:
+        """Extend ``loss_names`` as early as possible."""
+        super().set_model_attributes()
+        self._extend_loss_names()
+
+    def get_validator(self) -> Any:
+        """Build the validator, then re-extend ``loss_names``.
+
+        This override is the one that actually matters. ``DetectionTrainer.get_validator``
+        assigns ``self.loss_names = "box_loss", "cls_loss", "dfl_loss"`` unconditionally,
+        and ``_setup_train`` calls it *after* ``set_model_attributes`` -- so extending the
+        names there alone is silently undone, and the extra column ends up unnamed while
+        the metrics shift one position left. Verified against Ultralytics 8.3.253:
+        ``detect/train.py:165`` versus ``engine/trainer.py:268`` and ``:332``.
+        """
+        validator = super().get_validator()
+        self._extend_loss_names()
+        return validator
 
     def build_optimizer(
         self,

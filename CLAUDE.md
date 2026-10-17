@@ -24,6 +24,26 @@ Sections 0–4 rules/context · 5–12 build specs · 13 phased tasks + acceptan
 9. **Small, reviewable commits**, conventional-commit messages. Every phase ends with a commit and
    a short summary to the owner.
 
+## Approved deviation from hard rule 0.2 (17 Oct 2026)
+
+The DO console will not issue an API token without a payment method, and the owner has
+declined to add one. **There is therefore no API token, so no trap-on-exit destroy and no
+reaper.** The owner approved launching GPU Droplets by hand from the console instead.
+
+Replacements, which every launch path must still carry:
+
+1. An in-VM `timeout` watchdog that hard-kills training at `MAX_RUNTIME_HOURS`.
+2. Artifacts pushed off the Droplet *before* the job exits, never after (rule 0.4 stands).
+3. A loud end-of-run banner, then `poweroff`, so the owner notices it is done.
+4. The owner destroys the Droplet in the console. Powering off does **not** stop billing.
+
+Why this is acceptable here: the account has **no card on file**, and the console states
+*"AMD GPU Droplets will be destroyed after credit is used if no payment method is
+applied"*. Worst-case spend is therefore capped at the $100 credit, which expires 19 Oct
+2026 anyway. The runaway-cost scenario rule 0.2 was written to prevent cannot happen.
+
+Rules 0.1 (explicit "yes" plus printed cost before any launch) and 0.4 are unaffected.
+
 ## Current state
 
 Phase 0 complete (repo bootstrap). See `docs/PROJECT_SPEC.md` Section 13 for the phase list.

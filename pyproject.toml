@@ -23,6 +23,7 @@ dependencies = [
 # then `pip install -e ".[dev]"`.
 dev = [
   "pytest>=8.0",
+  "polars>=0.20.0",
   "pytest-cov>=5.0",
   "ruff>=0.6",
   "pre-commit>=3.7",
@@ -34,6 +35,12 @@ dev = [
 # Everything needed to actually train / track / version data.
 train = [
   "ultralytics==8.3.*",
+  # Declared by ultralytics but pinned here too: we install ultralytics with --no-deps
+  # so its opencv-python requirement does not pull the non-headless wheel over
+  # opencv-python-headless. polars is what plot_results/plot_labels use in 8.3.x, and
+  # without it training dies *after* the last epoch, at plotting time -- the most
+  # expensive possible moment to discover a missing dependency.
+  "polars>=0.20.0",
   "mlflow==3.*",
   "dvc[s3]>=3.50",
   "boto3>=1.34",

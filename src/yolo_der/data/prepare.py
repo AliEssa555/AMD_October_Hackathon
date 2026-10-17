@@ -166,13 +166,23 @@ def materialise(items: dict[str, list[SplitItem]], out: Path) -> None:
 def write_data_yaml(out: Path, names: list[str]) -> Path:
     """Write the Ultralytics dataset yaml.
 
-    ``path`` is relative to the repository root, which is the working directory for every
-    training command (``/work/yolo-der`` in containers). Ultralytics resolves a relative
-    ``path`` against its ``datasets_dir`` setting, so the trainer pins that setting to the
-    repo root -- to be verified in Phase 3 against the installed Ultralytics.
+    **``path`` is deliberately omitted** (verified against Ultralytics 8.3.253,
+    ``data/utils.py::check_det_dataset``):
+
+    .. code-block:: python
+
+        path = Path(extract_dir or data.get("path") or Path(data.get("yaml_file", "")).parent)
+        if not path.exists() and not path.is_absolute():
+            path = (DATASETS_DIR / path).resolve()
+
+    A relative ``path:`` is resolved against the *current working directory* first and then
+    silently against ``DATASETS_DIR`` (``~/datasets``). So ``path: data/prepared`` works
+    only when the command runs from the repo root, and otherwise fails with a confusing
+    "dataset not found" pointing at a directory nobody chose. With ``path`` absent,
+    Ultralytics falls back to the yaml's **own parent directory** -- correct and
+    cwd-independent on the laptop, in a container and on the Droplet alike.
     """
     doc = {
-        "path": "data/prepared",
         "train": "train/images",
         "val": "valid/images",
         "test": "test/images",
