@@ -33,9 +33,24 @@ reaper.** The owner approved launching GPU Droplets by hand from the console ins
 Replacements, which every launch path must still carry:
 
 1. An in-VM `timeout` watchdog that hard-kills training at `MAX_RUNTIME_HOURS`.
-2. Artifacts pushed off the Droplet *before* the job exits, never after (rule 0.4 stands).
-3. A loud end-of-run banner, then `poweroff`, so the owner notices it is done.
-4. The owner destroys the Droplet in the console. Powering off does **not** stop billing.
+2. Artifacts bundled by an `EXIT` trap on *every* path -- success, crash, timeout,
+   Ctrl-C -- before anything else, and the bundle's size verified (rule 0.4 stands).
+3. A loud end-of-run banner naming the exit status, the bundle and the destroy step.
+4. The owner pulls with `infra/fetch_results.sh`, then destroys the Droplet in the
+   console. Powering off does **not** stop billing.
+
+**Correction to safeguard 3, made while implementing it:** the original wording was
+"banner, then `poweroff`". Automatic poweroff is wrong here. Without Spaces there is
+nowhere for the Droplet to push to, so the bundle stays on its disk -- and a powered-off
+Droplet is unreachable *and still billed*, i.e. poweroff would hide the artifacts while
+the meter runs. `run_job.sh` therefore keeps `--poweroff` as an opt-in for the
+unattended case and **refuses it unless the bundle was pushed to a remote**. The owner
+pulling and then destroying is the path that actually satisfies rule 0.4.
+
+`infra/{launch_gpu.sh,cloud-init.yaml.tmpl,reaper.sh}` are deleted, not stubbed: all
+three need the token. `setup_base.sh` and `status.sh` are kept but unused (no hub
+Droplet, no Spaces). The live path is `docs/MANUAL_LAUNCH.md` ->
+`infra/bootstrap.sh` -> `infra/run_job.sh` -> `infra/fetch_results.sh`.
 
 Why this is acceptable here: the account has **no card on file**, and the console states
 *"AMD GPU Droplets will be destroyed after credit is used if no payment method is

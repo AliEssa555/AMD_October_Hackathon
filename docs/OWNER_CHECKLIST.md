@@ -37,36 +37,34 @@ console** from your personal account. Creating resources in the wrong team spend
 
 - [x] `My AMD Team` holds the full $100, expiring 19 Oct 2026.
 
-## B. API tokens
+## B. ~~API tokens~~ — dropped, 17 Oct 2026
 
-Create these in **the team from step A** (API → Tokens → Generate New Token).
+The console will not issue a token without a payment method and you have declined to
+add one, so **there are no DO tokens** and nothing here to do. `doctl` is not used.
 
-- [ ] **`DIGITALOCEAN_ACCESS_TOKEN`** — full read/write. Name it `yolo-der-admin`.
-      Lives on your laptop (`.env`) and in GitHub Actions secrets. Nowhere else.
-- [ ] **`DO_SELF_DESTROY_TOKEN`** — custom scoped, name it `yolo-der-self-destroy`.
-      Grant **only** `droplet: read` and `droplet: delete` (the scope names in the UI may
-      differ slightly — pick the narrowest pair that allows reading and deleting Droplets).
-      This is the only DO token that ever reaches a GPU Droplet, because user-data is
-      readable from inside the Droplet via the metadata service.
+What this costs us: no scripted launch, no trap-on-exit destroy, and no reaper. What
+replaces them is in `CLAUDE.md` → *Approved deviation from hard rule 0.2*, and the
+procedure you actually follow is **`docs/MANUAL_LAUNCH.md`**.
 
-Paste both into `.env`. If you'd rather not paste tokens into a chat, put them in `.env`
-yourself and just tell me "done" — I only ever need to run commands, not see the values.
+The one consequence to keep in your head: **nothing will clean up a Droplet you
+forget.** Powering it off does not stop the bill; only Destroy does.
 
 ## C. SSH key
 
-- [ ] You have an SSH keypair. If not: `ssh-keygen -t ed25519 -C "yolo-der"`.
-- [ ] Upload the public key:
-      `doctl compute ssh-key import yolo-der --public-key-file ~/.ssh/id_ed25519.pub`
-- [ ] Put the fingerprint it prints into `DO_SSH_KEY_FINGERPRINT`.
+- [x] The console already lists one key, `test` (id 60164577).
+- [ ] Confirm the **private** half is on this laptop and works:
+      `ssh-add -l`, or check `~/.ssh/`. Without it you cannot reach the Droplet at all,
+      and a Droplet you cannot reach is a Droplet you can only destroy.
+- [ ] `rsync --version` in Git Bash. `fetch_results.sh` needs it for the pull home.
 
-## D. Spaces access key
+Nothing to upload with `doctl` (see B); you pick the key in the create form instead.
 
-- [ ] Create a Spaces access key (Spaces Object Storage → Access Keys).
-- [ ] If the UI offers **limited / per-bucket** keys, scope it to the project bucket only.
-      (The bucket doesn't exist yet — create the key after I create the bucket in Phase 2,
-      or create a full-access key now and replace it later.)
-- [ ] Put the pair into `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` in `.env`.
-      Those exact names are what boto3, DVC and MLflow read.
+## D. ~~Spaces access key~~ — dropped, 17 Oct 2026
+
+The $100 credit covers GPU Droplets only, and there is no card to pay for object
+storage, so there is no bucket. MLflow runs on the GPU Droplet against sqlite with its
+artifacts under `/work/runs`, and `infra/fetch_results.sh` pulls the lot home over SSH
+before you destroy the Droplet. Hard rule 0.4 still holds; the destination changed.
 
 ## E. Spend guardrails
 
@@ -86,7 +84,7 @@ yourself and just tell me "done" — I only ever need to run commands, not see t
       GPU Droplet needs a read-only deploy key or a fine-grained PAT, which I'll wire up.
 - [ ] Tell me the `owner/repo`, and I'll set `GIT_REPO_URL` and the GHCR image name.
 - [ ] Add these Actions secrets when we reach the relevant phase:
-      `DIGITALOCEAN_ACCESS_TOKEN` (Phase 4, for the reaper), then `HUB_HOST` and
+      `ROBOFLOW_API_KEY` (the Droplet rebuilds the dataset itself), then
       `HUB_SSH_KEY` (Phase 7, for API deploys).
 
 ## H. The paper PDF
@@ -100,26 +98,29 @@ yourself and just tell me "done" — I only ever need to run commands, not see t
 
 ## Install these CLIs (your machine)
 
-Currently missing: `doctl`, `dvc`, `aws`. Node 22 and Docker are already installed.
+Node 22 and Docker are already installed, and with sections B and D dropped there is
+very little left to install.
 
-```powershell
-# doctl — DigitalOcean CLI
-winget install --id DigitalOcean.Doctl
+- **`doctl`** — not needed. It cannot authenticate without a token.
+- **`aws`** — not needed. No bucket.
+- **`dvc`** — comes from the project venv (`.venv\Scripts\dvc.exe --version`), and is
+  only used locally to version `data/`. The Droplet rebuilds the dataset from
+  `params.yaml` instead of pulling a DVC remote.
+- **`rsync`** — needed, for `infra/fetch_results.sh`. Check with `rsync --version` in
+  Git Bash; if it is missing, `scp -r` by hand also works.
 
-# dvc + aws-cli come from the project venv once ./tasks.ps1 setup finishes:
-#   .venv\Scripts\dvc.exe --version
-# aws-cli (only needed for raw bucket pokes; DVC and boto3 don't need it)
-winget install --id Amazon.AWSCLI
-```
+The old gate for Phase 2 was `doctl balance get` showing the credit. Without a token
+the equivalent check is the console itself: the Billing page must show the $100 credit
+and the create form must show the MI300X plan as available, both of which were verified
+on 17 Oct 2026 and are recorded in the table at the top of this file.
 
-Then, once the token is in `.env`:
+---
 
-```powershell
-doctl auth init --context yolo-der
-doctl auth switch --context yolo-der
-doctl balance get          # must show the $100 credit
-doctl account get
-```
+## When you are ready to spend money
 
-`doctl balance get` showing the credit is the gate for Phase 2. Nothing gets created before
-that passes — spec rule 0.20: always confirm the active context is the credit account.
+Read **`docs/MANUAL_LAUNCH.md`** once, end to end, before the first launch. It is the
+whole procedure: create, bootstrap, train, pull, destroy — plus what to do when the SSH
+connection drops or the watchdog fires.
+
+I will not create a Droplet. Before every run I print the plan and hours × $1.99 and
+wait for you to say yes, and then you click Create yourself (hard rule 0.1).
