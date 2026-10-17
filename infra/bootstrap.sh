@@ -20,7 +20,7 @@ set -euo pipefail
 WORK=/work
 REPO="$WORK/yolo-der"
 RUNS="$WORK/runs"
-GIT_REPO_URL="${GIT_REPO_URL:-https://github.com/OWNER/yolo-der.git}"
+GIT_REPO_URL="${GIT_REPO_URL:-https://github.com/AliEssa555/AMD_October_Hackathon.git}"
 GIT_REF="${GIT_REF:-main}"
 
 bold() { printf '\n\033[1m== %s\033[0m\n' "$1"; }
@@ -72,12 +72,23 @@ mkdir -p "$WORK" "$RUNS"
 
 # --------------------------------------------------------------------- repo ---
 bold "Repository"
+# Three ways the repo can get here, in order of preference. The clone is only
+# attempted if the remote is actually reachable: it may be private or not pushed yet,
+# and a bare `git clone` failure is a confusing way to discover that at $1.99/hr.
 if [[ -d "$REPO/.git" ]]; then
-  git -C "$REPO" fetch --quiet origin "$GIT_REF"
-  git -C "$REPO" checkout --quiet "$GIT_REF"
-  git -C "$REPO" reset --hard --quiet "origin/$GIT_REF"
-else
+  # Already here: a re-run, or the owner rsynced it up (see docs/MANUAL_LAUNCH.md).
+  if git -C "$REPO" fetch --quiet origin "$GIT_REF" 2>/dev/null; then
+    git -C "$REPO" reset --hard --quiet "origin/$GIT_REF"
+  else
+    printf '  no reachable remote; using the working tree as it is\n'
+  fi
+elif git ls-remote --exit-code "$GIT_REPO_URL" >/dev/null 2>&1; then
   git clone --quiet --branch "$GIT_REF" "$GIT_REPO_URL" "$REPO"
+else
+  die "no repo at $REPO, and $GIT_REPO_URL is not reachable (private, or never
+  pushed?). Send it up from the laptop instead, then re-run this script:
+    rsync -ah --exclude .venv --exclude data --exclude runs \\
+      ./ root@<droplet-ip>:/work/yolo-der/"
 fi
 printf 'at %s\n' "$(git -C "$REPO" log --oneline -1)"
 ok "$REPO"

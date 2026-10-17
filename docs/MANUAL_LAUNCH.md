@@ -19,6 +19,7 @@ that is training.
 |---|---|
 | Console | <https://devcloud.amd.com/gpus/new> |
 | Droplet list | <https://cloud.digitalocean.com/droplets> |
+| Repo | <https://github.com/AliEssa555/AMD_October_Hackathon> |
 | Credit | $100, expires **19 Oct 2026** |
 | Price | **$1.99** per GPU-hour (verified on the create form; the spec's $2.59 was wrong) |
 | Budget | ~50 GPU-hours total |
@@ -53,20 +54,43 @@ Then write the time down. Literally — a sticky note with the UTC time you clic
 Create. It is the only clock you have, and the bill is per hour of existence, not per
 hour of training.
 
-## 2. Set it up (free, ~10 minutes)
+## 2. Get the code and the data onto it (free, ~10 minutes)
+
+Two routes. **Route B is the one that works right now**, because nothing has been pushed
+to `AliEssa555/AMD_October_Hackathon` yet — `curl` of the raw file returns 404.
+
+### Route A — if the repo is pushed and public
 
 ```bash
 ssh root@<droplet-ip>                    # accept the host key
-curl -fsSL https://raw.githubusercontent.com/<owner>/yolo-der/main/infra/bootstrap.sh -o bootstrap.sh
+curl -fsSL https://raw.githubusercontent.com/AliEssa555/AMD_October_Hackathon/main/infra/bootstrap.sh -o bootstrap.sh
 ROBOFLOW_API_KEY=<key> bash bootstrap.sh
 ```
 
-`bootstrap.sh` checks the GPU *first* and refuses to go on if `torch.version.hip` is
-empty or no device is visible — a non-GPU Droplet is worth discovering in minute one,
-not minute forty. It then installs dependencies, re-checks that pip did not replace the
-ROCm torch build, rebuilds the dataset from Roboflow, and fetches `yolov8n.pt`.
+### Route B — send the repo up from this laptop
+
+```bash
+# from the repo root, on the laptop
+rsync -ah --info=progress2 --exclude .venv --exclude data --exclude runs \
+  ./ root@<droplet-ip>:/work/yolo-der/
+
+ssh root@<droplet-ip>
+ROBOFLOW_API_KEY=<key> bash /work/yolo-der/infra/bootstrap.sh
+```
+
+`bootstrap.sh` finds the tree already in place and skips the clone. The excludes matter:
+`.venv` is Windows binaries that are useless there, and `data` is rebuilt on the Droplet
+anyway, which is far quicker than your upload.
+
+### What it does either way
+
+Checks the GPU **first** and refuses to go on if `torch.version.hip` is empty or no
+device is visible — a non-GPU Droplet is worth discovering in minute one, not minute
+forty. Then installs dependencies, re-checks that pip did not quietly replace the ROCm
+torch build, rebuilds the dataset from Roboflow, and fetches `yolov8n.pt`.
 
 It prints the exact `run_job.sh` line to use next. It never starts training.
+
 
 ## 3. Train 💸
 
