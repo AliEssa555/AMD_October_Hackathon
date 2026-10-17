@@ -61,7 +61,21 @@ Rules 0.1 (explicit "yes" plus printed cost before any launch) and 0.4 are unaff
 
 ## Current state
 
-Phase 0 complete (repo bootstrap). See `docs/PROJECT_SPEC.md` Section 13 for the phase list.
+Phases 0-3 complete; Phase 4 code complete but **not yet run on a GPU**.
+
+- Training works end to end on CPU: `der_enh` and `der_enh_entreg` both completed full
+  smoke runs, including from outside the repo root. Weight transfer verified,
+  +9.51% params, 6 ReZero scales exempted from decay, `ent_loss` present in
+  `results.csv`, MLflow artifacts and a registry version written.
+- The launch path is manual: `docs/MANUAL_LAUNCH.md` -> `infra/bootstrap.sh` ->
+  `infra/run_job.sh` -> `infra/fetch_results.sh`. All three are dry-run tested on
+  Windows; none has touched an MI300X yet.
+- Next, and it needs an explicit "yes" plus a printed cost first (rule 0.1): the Phase 4
+  GPU smoke test. The concurrency measurement the spec asks for feeds the 9.3 table,
+  which has to be recomputed before Phase 5 is planned.
+- Credits expire **19 Oct 2026**. Two days. Phases 7-8 are the ones to drop.
+
+See `docs/PROJECT_SPEC.md` Section 13 for the full phase list.
 
 ## Conventions
 
