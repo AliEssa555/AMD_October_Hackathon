@@ -55,7 +55,8 @@ forget.** Powering it off does not stop the bill; only Destroy does.
 - [ ] Confirm the **private** half is on this laptop and works:
       `ssh-add -l`, or check `~/.ssh/`. Without it you cannot reach the Droplet at all,
       and a Droplet you cannot reach is a Droplet you can only destroy.
-- [ ] `rsync --version` in Git Bash. `fetch_results.sh` needs it for the pull home.
+- [x] Checked: you have `ssh`, `scp` and `tar` but **no `rsync`**. Nothing to install --
+      `send_repo.sh` and `fetch_results.sh` fall back to tar-over-ssh.
 
 Nothing to upload with `doctl` (see B); you pick the key in the create form instead.
 
@@ -106,8 +107,8 @@ very little left to install.
 - **`dvc`** — comes from the project venv (`.venv\Scripts\dvc.exe --version`), and is
   only used locally to version `data/`. The Droplet rebuilds the dataset from
   `params.yaml` instead of pulling a DVC remote.
-- **`rsync`** — needed, for `infra/fetch_results.sh`. Check with `rsync --version` in
-  Git Bash; if it is missing, `scp -r` by hand also works.
+- **`rsync`** — not needed. It is absent on this machine, so both transfer scripts use
+  tar-over-ssh; they use rsync only if they happen to find it.
 
 The old gate for Phase 2 was `doctl balance get` showing the credit. Without a token
 the equivalent check is the console itself: the Billing page must show the $100 credit

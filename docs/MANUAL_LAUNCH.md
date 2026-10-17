@@ -29,8 +29,8 @@ You need, in this order:
 1. Your SSH **private** key on this laptop, matching the public key the console shows
    (`test`, id 60164577). Check with `ssh-add -l` or just look in `~/.ssh/`.
 2. `ROBOFLOW_API_KEY` to hand — the Droplet rebuilds the dataset itself.
-3. `rsync` available in Git Bash, for the pull home. `rsync --version` to check.
-4. The run plan and its cost, from me in chat. **I will not create a Droplet; you do it
+3. Nothing else to install. There is no `rsync` on this machine, so the scripts use
+   `tar` over `ssh` instead, both of which Git Bash already has.
    in the console.** I will not even ask you to without printing hours × $1.99 first.
 
 ---
@@ -70,13 +70,16 @@ ROBOFLOW_API_KEY=<key> bash bootstrap.sh
 ### Route B — send the repo up from this laptop
 
 ```bash
-# from the repo root, on the laptop
-rsync -ah --info=progress2 --exclude .venv --exclude data --exclude runs \
-  ./ root@<droplet-ip>:/work/yolo-der/
+bash infra/send_repo.sh root@<droplet-ip>     # from the repo root, on the laptop
 
 ssh root@<droplet-ip>
 ROBOFLOW_API_KEY=<key> bash /work/yolo-der/infra/bootstrap.sh
 ```
+
+`send_repo.sh` streams a tarball through the SSH connection, so there is nothing to
+install. It is about 800 KB: it leaves out `.venv`, `data`, `runs`, `mlruns` and the
+DVC cache, keeps `.git`, and then checks that the Droplet reports the same commit SHA
+as this laptop before telling you it worked.
 
 `bootstrap.sh` finds the tree already in place and skips the clone. The excludes matter:
 `.venv` is Windows binaries that are useless there, and `data` is rebuilt on the Droplet

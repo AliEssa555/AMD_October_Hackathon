@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 INFRA = Path(__file__).resolve().parents[1] / "infra"
-SCRIPTS = ("bootstrap.sh", "run_job.sh", "fetch_results.sh")
+SCRIPTS = ("bootstrap.sh", "run_job.sh", "fetch_results.sh", "send_repo.sh")
 
 
 def read(name: str) -> str:
@@ -52,8 +52,14 @@ def test_no_secret_is_baked_into_a_script(name):
     body = read(name)
     for token in ("dop_v1_", "DO_SELF_DESTROY_TOKEN=dop", "AWS_SECRET_ACCESS_KEY="):
         assert token not in body, f"{name} looks like it contains a secret ({token})"
-    # The Roboflow key may be *referenced*, never assigned a literal.
-    assert "ROBOFLOW_API_KEY=" not in body.replace("ROBOFLOW_API_KEY=...", "")
+    # The Roboflow key may be referenced, and shown as a placeholder in a usage line,
+    # but never assigned a real value. A real key has no angle brackets or dots in it.
+    import re
+
+    for match in re.findall(r"ROBOFLOW_API_KEY=(\S*)", body):
+        assert match in ("", "<key>", "...") or match.startswith("$"), (
+            f"{name} may contain a real Roboflow key: {match!r}"
+        )
 
 
 class TestRunJob:
@@ -174,3 +180,49 @@ def test_the_manual_launch_doc_exists_and_quotes_the_verified_price():
     assert "$1.99" in doc
     assert "2.59" in doc  # the wrong price is named as wrong, so nobody reintroduces it
     assert "Destroy" in doc
+
+
+class TestTransferWithoutRsync:
+    """The owner has ssh, scp and tar but no rsync, which was checked, not assumed."""
+
+    def test_send_repo_streams_a_tarball_over_ssh(self):
+        body = read("send_repo.sh")
+        assert "tar -cz" in body and "tar -xz" in body
+
+    def test_send_repo_excludes_the_dvc_cache(self):
+        """DVC keeps a second full copy of the dataset: 96% of the tarball."""
+        body = read("send_repo.sh")
+        for path in ("./.dvc/cache", "./data", "./.venv", "./runs", "./mlruns"):
+            assert f"--exclude={path}" in body
+
+    def test_send_repo_excludes_use_a_leading_dot_slash(self):
+        """`--exclude=data` silently matches nothing here; that is a 256 MB upload.
+
+        Checked against the array only. The first version of this test scanned the whole
+        file and tripped over the comment explaining the bug.
+        """
+        body = read("send_repo.sh")
+        array = body.split("EXCLUDES=(")[1].split(")")[0]
+        for line in array.splitlines():
+            line = line.strip()
+            if not line.startswith("--exclude="):
+                continue
+            assert line.startswith("--exclude=./"), line
+
+    def test_send_repo_verifies_the_commit_matches(self):
+        """A truncated stream can still unpack into something that looks plausible."""
+        body = read("send_repo.sh")
+        assert "rev-parse HEAD" in body
+        assert "the remote checkout does not match this one" in body
+
+    def test_fetch_results_does_not_require_rsync(self):
+        """Hard rule 0.4 cannot depend on software the owner does not have."""
+        body = read("fetch_results.sh")
+        assert "rsync not found" not in body
+        assert "command -v rsync" in body
+        assert "tar -cz -C" in body  # the fallback that actually runs here
+
+    def test_send_repo_does_not_train_or_destroy(self):
+        body = read("send_repo.sh")
+        for forbidden in ("yolo_der.train", "poweroff", "droplet delete"):
+            assert forbidden not in body

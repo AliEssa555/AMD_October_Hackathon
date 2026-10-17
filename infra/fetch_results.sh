@@ -65,23 +65,35 @@ remote "cat $REMOTE_BUNDLE_DIR/*.done 2>/dev/null" || true
 
 mkdir -p "$LOCAL_DIR"
 bold "Pulling into $LOCAL_DIR"
-command -v rsync >/dev/null || die "rsync not found; install it (Git Bash: pacman -S rsync) or scp by hand"
+# rsync if it is there, tar-over-ssh otherwise. Git for Windows ships no rsync and the
+# owner's machine does not have it, so the fallback is the path that actually runs; it
+# needs nothing but tar and ssh, both of which Git Bash provides. This is the step hard
+# rule 0.4 depends on, so it must not require an install at the moment it is needed.
+pull_dir() {
+  # $1 remote absolute dir, $2 local destination
+  local remote="$1" local_dest="$2"
+  mkdir -p "$local_dest"
+  if ! ssh "${SSH_OPTS[@]}" "$HOST" "test -d '$remote'" 2>/dev/null; then
+    printf '  %s does not exist on the Droplet\n' "$remote"
+    return 1
+  fi
+  if command -v rsync >/dev/null 2>&1; then
+    rsync -ah --info=progress2 -e "ssh ${SSH_OPTS[*]}" "$HOST:$remote/" "$local_dest/"
+  else
+    # -z because the MLflow db and the csv/json metrics compress well; the checkpoints
+    # do not, but they dominate the time either way.
+    ssh "${SSH_OPTS[@]}" "$HOST" "tar -cz -C '$remote' ." | tar -xz -C "$local_dest"
+  fi
+}
 
-# Two passes. The bundle first, because it is the self-contained copy that matters; then
-# the raw runs tree, which is nicer to browse and lets MLflow be opened directly.
+# The bundle first: it is the self-contained copy that matters. Then the raw runs tree,
+# which is nicer to browse and lets MLflow open the database directly.
 pulled_any=0
-if rsync -ah --info=progress2 -e "ssh ${SSH_OPTS[*]}" \
-     "$HOST:$REMOTE_BUNDLE_DIR/" "$LOCAL_DIR/bundles/"; then
-  pulled_any=1
-else
-  printf '\033[33m! no bundle pulled\033[0m\n'
-fi
-if rsync -ah --info=progress2 -e "ssh ${SSH_OPTS[*]}" \
-     "$HOST:$REMOTE_RUNS_DIR/" "$LOCAL_DIR/runs/"; then
-  pulled_any=1
-else
-  printf '\033[33m! no runs tree pulled\033[0m\n'
-fi
+pull_dir "$REMOTE_BUNDLE_DIR" "$LOCAL_DIR/bundles" && pulled_any=1 \
+  || printf '\033[33m! no bundle pulled\033[0m\n'
+pull_dir "$REMOTE_RUNS_DIR" "$LOCAL_DIR/runs" && pulled_any=1 \
+  || printf '\033[33m! no runs tree pulled\033[0m\n'
+
 ((pulled_any)) || die "nothing was pulled -- do NOT destroy the Droplet yet"
 
 # ------------------------------------------------------------------- verify ---

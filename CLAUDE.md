@@ -6,7 +6,7 @@ Sections 0–4 rules/context · 5–12 build specs · 13 phased tasks + acceptan
 ## Hard rules (spec Section 0 — these override everything else)
 
 1. **Never create a GPU Droplet without explicit user confirmation in chat.** Before every launch,
-   print the run plan and estimated cost (`hours × $2.59`) and wait for an explicit "yes".
+   print the run plan and estimated cost (`hours × $1.99` -- verified, see the price-correction note in spec Section 3) and wait for an explicit "yes".
 2. **A powered-off GPU Droplet is still billed.** Only *destroying* it stops billing. Every launch
    path must: destroy on exit (trap), carry a max-runtime watchdog, and be covered by the reaper.
 3. **Never commit secrets.** `.env` locally, GitHub Actions secrets in CI. `.gitignore` must keep
