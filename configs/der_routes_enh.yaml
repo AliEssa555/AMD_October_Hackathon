@@ -1,0 +1,9 @@
+# Variant (optional): DER with 5 paths produces the routing weights that are used directly
+# as EnhanceNet's branch gate. One plausible reading of Fig. 1-3 ("DER routes features to
+# enhancement paths"). Reported as a variant, NOT as "the paper's method" (spec 7.3).
+name: der_routes_enh
+modules:
+  der: true
+  enhancenet: true
+  combine: der_routes_enh
+  der_paths: 5

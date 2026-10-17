@@ -1,0 +1,5 @@
+# Ablation row 3: EnhanceNet only (paper Eq. 3-9).
+name: enh
+modules:
+  der: false
+  enhancenet: true

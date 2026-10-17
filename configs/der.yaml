@@ -1,0 +1,5 @@
+# Ablation row 2: DER only (paper Eq. 1-2).
+name: der
+modules:
+  der: true
+  enhancenet: false

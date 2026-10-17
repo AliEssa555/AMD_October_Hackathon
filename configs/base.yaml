@@ -1,0 +1,33 @@
+# Shared training hyper-parameters. Variant files override only `name` and `modules.*`.
+# config.py deep-merges base + variant and rejects unknown keys (spec 9.1).
+model: yolov8n.pt
+data: data/prepared/data.yaml
+
+train:
+  epochs: 100          # FIXED before the first launch: Ultralytics resume restores epochs
+                       # from the checkpoint, so this cannot be raised mid-run (gotcha 2).
+  imgsz: 448           # paper's input size
+  batch: 64            # identical for every variant; the paper used 6 on a 4090 (deviation)
+  optimizer: SGD       # explicit: don't let 'auto' pick AdamW
+  lr0: 0.01
+  momentum: 0.937
+  weight_decay: 0.0005
+  cos_lr: true
+  warmup_epochs: 3
+  patience: 0          # no early stopping -- every variant gets the same epoch budget
+  save_period: 1       # last.pt every epoch; tracking.py mirrors it to Spaces
+  cache: ram           # MI300X Droplets have plenty of RAM. Set false on Colab.
+  workers: 8           # per process; with 4 concurrent runs keep the total <= vCPUs
+  amp: true
+  deterministic: false
+  plots: true
+
+modules:
+  der: false
+  enhancenet: false
+  insert_at: [4, 6, 9]   # P3, P4, after the last backbone block (spec 7.4)
+  combine: sequential    # sequential | der_routes_enh
+  der_paths: 4
+  severity_cond: false
+  entropy_reg: 0.0
+  load_balance: 0.0

@@ -1,0 +1,5 @@
+# Ablation row 1: stock YOLOv8n, no inserted modules. The reference for every delta.
+name: baseline
+modules:
+  der: false
+  enhancenet: false

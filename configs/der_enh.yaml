@@ -1,0 +1,7 @@
+# Ablation row 4: both, sequential -- out = EnhanceNet(DER(F)) at each insertion point.
+# This is the main "full model" comparison against the paper's Table 4.
+name: der_enh
+modules:
+  der: true
+  enhancenet: true
+  combine: sequential

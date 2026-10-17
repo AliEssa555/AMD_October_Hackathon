@@ -1,0 +1,17 @@
+# DVC parameters. Changing a value here invalidates the stages that declare it
+# in dvc.yaml, so `dvc repro` reruns exactly the affected stages.
+data:
+  roboflow:
+    workspace: project-h68de
+    project: exdark-kd37x
+    version: 2
+    format: yolov8
+  test_fraction_if_missing: 0.1
+  seed: 0
+
+severity:
+  tau: 0.3                  # darkness threshold, paper Eq. 10
+  dcp_patch: 15             # dark-channel-prior patch size (He et al. 2009)
+  dcp_omega: 0.95           # haze retention factor
+  dcp_top_fraction: 0.001   # top 0.1% brightest dark-channel pixels -> atmospheric light A
+  dcp_resize_long_side: 640 # speed: resize long side before DCP (documented deviation)

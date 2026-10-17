@@ -1,0 +1,26 @@
+# Normalise in the repo; check out with native endings by default.
+* text=auto
+
+# These are executed on Linux (GPU Droplet cloud-init, the hub, CI containers).
+# A CRLF shebang line makes the kernel fail with "bad interpreter: No such file or
+# directory", so force LF regardless of the checkout platform.
+*.sh            text eol=lf
+Makefile        text eol=lf
+*.yaml          text eol=lf
+*.yml           text eol=lf
+*.tmpl          text eol=lf
+Dockerfile      text eol=lf
+*.Dockerfile    text eol=lf
+Caddyfile       text eol=lf
+.env.example    text eol=lf
+
+# Windows-only runner.
+*.ps1           text eol=crlf
+
+# Binary: never munge, never diff.
+*.png           binary
+*.jpg           binary
+*.jpeg          binary
+*.pt            binary
+*.onnx          binary
+*.parquet       binary

@@ -1,0 +1,59 @@
+# --- secrets (hard rule 0.3) -------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.dvc/config.local
+*secret*
+!*secrets*.md
+
+# --- python ------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# --- ml artefacts ------------------------------------------------------------
+mlruns/
+runs/
+*.db
+*.pt
+*.onnx
+!api/test/fixtures/*.json
+wandb/
+
+# --- data (DVC-tracked, never in git) ----------------------------------------
+data/
+!data/.gitkeep
+
+# --- node --------------------------------------------------------------------
+node_modules/
+api/dist/
+npm-debug.log*
+
+# --- terraform ---------------------------------------------------------------
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+
+# --- os / editor -------------------------------------------------------------
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# local DVC remote used in Phase 1 before Spaces exists
+.dvc-store/

@@ -1,0 +1,24 @@
+name: reaper
+
+# Safety net for hard rule 0.2: a powered-off GPU Droplet is still billed, so anything
+# tagged ephemeral-gpu that outlives its watchdog gets destroyed.
+# Caveats: scheduled workflows run only on the default branch and can be delayed several
+# minutes, and GitHub disables schedules after 60 days of repo inactivity.
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+jobs:
+  reap:
+    runs-on: ubuntu-latest
+    if: ${{ hashFiles('infra/reaper.sh') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+      - name: Destroy stale ephemeral GPU Droplets
+        env:
+          REAPER_MAX_AGE_HOURS: ${{ vars.REAPER_MAX_AGE_HOURS || '7' }}
+        run: bash infra/reaper.sh

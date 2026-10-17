@@ -1,0 +1,2 @@
+# Phase 4: FROM rocm/pytorch:<PINNED_TAG>. Pin the tag against the host ROCm driver and
+# assert torch.version.hip so a stray CUDA/CPU wheel fails the build (spec 8.5, gotcha 5).

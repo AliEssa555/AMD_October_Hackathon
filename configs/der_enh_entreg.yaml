@@ -1,0 +1,9 @@
+# E1: the paper asserts "entropy-aware" but never measures or optimises it (spec 2.7, 10.2).
+# Add an explicit entropy regulariser (sharpens routing) + load balancing (prevents collapse).
+name: der_enh_entreg
+modules:
+  der: true
+  enhancenet: true
+  combine: sequential
+  entropy_reg: 0.01
+  load_balance: 0.01

@@ -1,0 +1,9 @@
+# E3: the paper predicts gate parameters from GAP features only. Here the measured s_dark
+# scalar is concatenated to the router/gate input (cond_dim=1), computed inside the model so
+# it survives ONNX export (spec 7.5, 10.4).
+name: der_enh_sevcond
+modules:
+  der: true
+  enhancenet: true
+  combine: sequential
+  severity_cond: true
