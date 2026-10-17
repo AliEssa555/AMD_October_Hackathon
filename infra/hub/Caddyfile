@@ -1,0 +1,6 @@
+# Public entry point. MLflow is deliberately NOT proxied: it has no auth and is reachable
+# only over the VPC or an SSH tunnel (spec 8.4).
+{$SITE_ADDRESS} {
+	encode gzip
+	reverse_proxy api:3000
+}

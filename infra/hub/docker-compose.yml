@@ -1,0 +1,63 @@
+# Hub services (spec 8.4). Deployed to /opt/hub on the yolo-der-hub Droplet.
+#   docker compose up -d mlflow caddy          # Phase 2
+#   API_IMAGE=... docker compose up -d api     # Phase 7
+#
+# Variables come from /opt/hub/.env, which docker compose reads automatically for
+# ${...} interpolation AND which each service loads as env_file.
+services:
+  mlflow:
+    build:
+      context: .
+      dockerfile: mlflow.Dockerfile
+    container_name: mlflow
+    restart: unless-stopped
+    env_file: .env
+    # --serve-artifacts proxies artifact uploads through this server, so GPU Droplets need
+    # no Spaces keys for MLflow (they still need them for DVC and checkpoint sync).
+    # --backend-store-uri must be a database: the file store is deprecated in MLflow 3.x
+    # and raises (gotcha 1). Four slashes = absolute path /data/mlflow.db.
+    command: >
+      mlflow server
+      --host 0.0.0.0 --port 5000
+      --backend-store-uri sqlite:////data/mlflow.db
+      --artifacts-destination s3://${SPACES_BUCKET}/mlflow
+      --serve-artifacts
+    volumes:
+      - mlflow-data:/data
+    # Bound to the VPC interface only -- never 0.0.0.0. MLflow has no authentication.
+    ports:
+      - "${HUB_PRIVATE_IP}:5000:5000"
+
+  api:
+    image: ${API_IMAGE:-ghcr.io/OWNER/yolo-der-api:latest}
+    container_name: api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      MLFLOW_TRACKING_URI: "http://mlflow:5000"
+      PORT: "3000"
+    depends_on:
+      - mlflow
+    expose:
+      - "3000"
+    profiles: ["api"]   # Phase 7: enable with `docker compose --profile api up -d`
+
+  caddy:
+    image: caddy:2
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    environment:
+      SITE_ADDRESS: "${SITE_ADDRESS}"
+    profiles: ["api"]   # nothing to serve until the API exists
+
+volumes:
+  mlflow-data: {}
+  caddy-data: {}
+  caddy-config: {}
