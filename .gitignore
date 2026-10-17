@@ -33,8 +33,10 @@ runs/
 wandb/
 
 # --- data (DVC-tracked, never in git) ----------------------------------------
-data/
-!data/.gitkeep
+# Leading slash: root-level only. A bare `data/` would also ignore the
+# src/yolo_der/data package.
+/data/
+!/data/.gitkeep
 
 # --- node --------------------------------------------------------------------
 node_modules/

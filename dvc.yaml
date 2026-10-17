@@ -1,0 +1,45 @@
+# Data pipeline (spec 6.5). Training is deliberately NOT a stage here: it runs on
+# ephemeral GPU Droplets and is tracked in MLflow. Each MLflow run instead logs the
+# dvc.lock md5 of data/prepared as the `data_hash` tag, which ties results to the dataset.
+stages:
+  download:
+    cmd: python -m yolo_der.data.download --out data/raw
+    deps:
+      - src/yolo_der/data/download.py
+    params:
+      - data.roboflow
+    outs:
+      - data/raw
+
+  prepare:
+    cmd: python -m yolo_der.data.prepare --raw data/raw --out data/prepared
+    deps:
+      - src/yolo_der/data/prepare.py
+      - data/raw
+    params:
+      - data.test_fraction_if_missing
+      - data.seed
+    outs:
+      - data/prepared
+    metrics:
+      - reports/data_stats.json:
+          cache: false
+    plots:
+      - reports/class_hist.png:
+          cache: false
+
+  severity:
+    cmd: python -m yolo_der.data.severity --data data/prepared --out data/severity.csv --bins data/bins
+    deps:
+      - src/yolo_der/data/severity.py
+      - data/prepared
+    params:
+      - severity
+    outs:
+      # data/bins (not data/prepared/test_bins): DVC forbids two stages declaring the same
+      # output, and data/prepared already belongs to the prepare stage.
+      - data/severity.csv
+      - data/bins
+    plots:
+      - reports/severity_hist.png:
+          cache: false

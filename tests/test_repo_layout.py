@@ -1,6 +1,7 @@
 """Phase 0 acceptance: the tree, the configs, and the secret-hygiene rules hold."""
 
 import re
+import subprocess
 
 import pytest
 import yaml
@@ -45,6 +46,36 @@ def test_expected_dirs_exist(repo, rel):
 def test_gitignore_covers_secrets_and_artefacts(repo, pattern):
     lines = {ln.strip() for ln in (repo / ".gitignore").read_text().splitlines()}
     assert pattern in lines, f".gitignore must ignore {pattern!r} (hard rule 0.3)"
+
+
+def test_source_packages_are_not_gitignored(repo):
+    """Regression: a bare ``data/`` ignore rule also hides ``src/yolo_der/data``.
+
+    The rule must be anchored (``/data/``) so only the dataset directory is ignored.
+    """
+    must_be_tracked = [
+        "src/yolo_der/data/prepare.py",
+        "src/yolo_der/data/severity.py",
+        "src/yolo_der/data/download.py",
+    ]
+    tracked = set(
+        subprocess.run(
+            ["git", "ls-files"], cwd=repo, capture_output=True, text=True, check=True
+        ).stdout.split()
+    )
+    missing = [p for p in must_be_tracked if p not in tracked]
+    assert not missing, f"not tracked by git (ignore rule too broad?): {missing}"
+
+
+def test_dataset_directory_is_still_gitignored(repo):
+    """The other half of the rule: raw/prepared data must never enter git."""
+    result = subprocess.run(
+        ["git", "check-ignore", "data/raw/anything.jpg"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, "data/ must stay ignored -- it is DVC-tracked"
 
 
 def test_env_example_has_no_values(repo):
