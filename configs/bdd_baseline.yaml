@@ -1,0 +1,16 @@
+# BDD100K row 1: stock YOLOv8n, no inserted modules. The reference for every delta
+# on this dataset (Addendum A.4).
+#
+# The BDD overrides are repeated in each bdd_* file rather than put in a bdd_base.yaml,
+# because load_config() merges exactly configs/base.yaml + one variant. Three duplicated
+# lines beat teaching the loader a second inheritance level on the last day of credit.
+name: bdd_baseline
+data: data/bdd100k/data.yaml
+train:
+  # Fixed before the first launch: Ultralytics restores epochs from the checkpoint on
+  # resume, so this cannot be raised mid-run (gotcha 2). Half of ExDark's 100 because
+  # the training set is 14x larger.
+  epochs: 50
+modules:
+  der: false
+  enhancenet: false

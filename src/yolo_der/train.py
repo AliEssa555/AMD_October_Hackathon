@@ -26,6 +26,7 @@ from yolo_der.config import Config, load_config
 from yolo_der.data.paths import repo_root
 
 VARIANTS = (
+    # ExDark (spec 9.3)
     "baseline",
     "der",
     "enh",
@@ -33,6 +34,11 @@ VARIANTS = (
     "der_enh_entreg",
     "der_enh_sevcond",
     "der_routes_enh",
+    # BDD100K (Addendum A.4). Same modules, different dataset and epoch budget.
+    "bdd_baseline",
+    "bdd_der_enh",
+    "bdd_der",
+    "bdd_enh",
 )
 
 # TrainConfig field -> Ultralytics arg. Every name here is a real YOLO argument; an

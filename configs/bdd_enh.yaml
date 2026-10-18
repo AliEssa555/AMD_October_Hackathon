@@ -1,0 +1,8 @@
+# BDD100K row 4: EnhanceNet only, no DER. Isolates the enhancement contribution.
+name: bdd_enh
+data: data/bdd100k/data.yaml
+train:
+  epochs: 50
+modules:
+  der: false
+  enhancenet: true

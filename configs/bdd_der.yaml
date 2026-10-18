@@ -1,0 +1,8 @@
+# BDD100K row 3: DER only, no EnhanceNet. Isolates the routing contribution.
+name: bdd_der
+data: data/bdd100k/data.yaml
+train:
+  epochs: 50
+modules:
+  der: true
+  enhancenet: false

@@ -1,0 +1,10 @@
+# BDD100K row 2: both modules, sequential -- out = EnhanceNet(DER(F)) at each insertion
+# point. The main comparison against bdd_baseline (Addendum A.4).
+name: bdd_der_enh
+data: data/bdd100k/data.yaml
+train:
+  epochs: 50
+modules:
+  der: true
+  enhancenet: true
+  combine: sequential

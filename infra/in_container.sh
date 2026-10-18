@@ -50,7 +50,12 @@ env_flags() {
   for name in "${FORWARD[@]}"; do
     if [[ -n "${!name-}" ]]; then out+=(-e "$name=${!name}"); fi
   done
-  printf '%s\n' "${out[@]}"
+  # The guard matters: `printf` with zero arguments still prints one empty line,
+  # so mapfile would build a one-element array holding "", and docker exec would be
+  # handed an empty argument -- "invalid container name or ID: value is empty".
+  # Only surfaces when none of FORWARD is set, e.g. a plain data-conversion command.
+  ((${#out[@]})) && printf '%s\n' "${out[@]}"
+  return 0
 }
 
 IMAGE="${YOLO_DER_IMAGE:-rocm/pytorch:latest}"
