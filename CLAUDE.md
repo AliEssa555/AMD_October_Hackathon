@@ -61,31 +61,66 @@ Rules 0.1 (explicit "yes" plus printed cost before any launch) and 0.4 are unaff
 
 ## Current state
 
-Phases 0-4 complete. **Ran on a real MI300X on 17 Oct 2026.**
+Phases 0-5 complete on ExDark, Phase 6 half written. **See
+`docs/ENGINEERING_LOG.md`** for the full account, including every mistake and fix --
+that file is the one to read first.
 
-- Baseline is done: 100 epochs on ExDark, **mAP50 0.574 / mAP50-95 0.270** (best epoch
-  90, 0.580). Pulled home to `runs/from-droplet/` (gitignored) with `results.csv`,
-  `best.pt`, `last.pt`, `mlflow.db` and the plots. The MLflow run carries
-  `gpu=AMD Instinct MI300X VF` and `hip=6.4.43483` -- the hardware evidence the
-  hackathon needs.
-- **Measured, replacing the spec's Section 9.3 estimates:** ~6 s/epoch steady state
-  (epoch 1 is ~48 s of one-time MIOpen kernel compilation), 3.8 GB VRAM of 192 GB, and
-  **9.9 minutes for a full 100-epoch run**. The seven-variant ablation is ~70 minutes,
-  about $2.30 -- not the $75 the spec budgeted.
-- **4-way concurrency does not work and is not needed.** Four processes spawn ~104
-  dataloader workers on 20 vCPU and contend on one MIOpen kernel cache; the GPU read
-  100% busy while the logs sat frozen. A single process is already fast enough.
-- Spend so far: **~$2.80** of the $100 credit.
-- The launch path is container-based, which the spec did not anticipate: the AMD image
-  ships **no torch on the host**. See `docs/MANUAL_LAUNCH.md` ->
-  `infra/send_repo.sh` -> `infra/in_container.sh` -> `infra/bootstrap.sh` ->
-  `infra/run_job.sh`, and `scripts/unbundle.py` to open a bundle on Windows.
-- **Next: the six remaining variants against the 0.574 baseline** (Phase 5), then the
-  Phase 6 analysis. Needs an explicit "yes" plus a printed cost (rule 0.1).
-- **Credits expire 19 Oct 2026, so 18 Oct is the last working day** (rule 0.7). Phases
-  7-8 (export/API/dashboard) are the ones to drop if time runs short.
+### The finding that matters
 
-See `docs/PROJECT_SPEC.md` Section 13 for the full phase list.
+**The DER router does not route.** Normalised routing entropy is 0.9997-0.9999 (1.0 =
+uniform) in every variant, with per-path weights hugging 0.25 for every image. The
+paper's "dynamic" routing is a fixed equal-weight ensemble of four conv paths here.
+
+- Not a dead module: ReZero scales moved to -0.33..+0.27, so the modules do train.
+- Not a broken pattern in general: EnhanceNet's branch gate *is* non-uniform, H~0.82.
+- The E1 intervention never fired: `train/ent_loss` logged 0.01498, which is exactly
+  `0.01 * mean(3*log 4, 3*log 5)`, so the term is correct but ~100x too weak against a
+  detection loss of order 2-6. **`entropy_reg` needs to be nearer 1.0** for the
+  question to have been asked. This is the cheapest high-value experiment left.
+
+### ExDark ablation (7 variants, 100 epochs, seed 0)
+
+| variant | mAP50 | delta | +params% | ms/img |
+|---|---|---|---|---|
+| baseline | 0.5672 | -- | 0.00 | 24.35 |
+| der | 0.5688 | +0.0016 (noise) | 7.20 | 30.23 |
+| der_enh | 0.5657 | -0.0015 (noise) | 9.52 | 34.38 |
+| der_enh_entreg | 0.5721 | +0.0049 (noise) | 9.52 | 34.97 |
+| der_enh_sevcond | **0.5756** | **+0.0084** | 9.53 | 35.92 |
+
+- **Noise floor 0.0056 mAP50**, measured as the spread across all seven variants on one
+  seed. `evaluate.py` prints *(within noise)* below it; do not report smaller deltas.
+- **+41% latency for no mAP gain** (24.35 -> 34.38 ms/img). Params stay under the
+  paper's <10% claim, so a reproduction reporting only params would miss the real cost.
+- The only delta above noise is `der_enh_sevcond` -- *our* E3 extension -- and its
+  darkest-quartile gain is +0.036 (0.5610 -> 0.5973). One seed, 164 images: a lead.
+- **Seeds are the gap.** Deltas of 0.002-0.008 against a 0.0056 floor cannot be settled
+  on one seed. 3 seeds x 2 variants is ~25 min and ~$2.
+
+### BDD100K (Addendum A)
+
+Converted and training: 66,312 / 3,551 / 10,000 at 448 px, **62.4 s/epoch**
+(1,056 img/s -- faster per image than ExDark, because 1280x720 caches to 448x252).
+50 epochs = 52 min = $1.74/run. Four variants = 3.5 h = $6.90.
+
+- `tod_night` has 3,929 test images, so the paper's night claim is testable.
+- `wx_foggy` has **13**, so its fog claim is not. `evaluate.py` flags bins under 100.
+
+### Operational facts
+
+- **No torch on the host**; the AMD image keeps PyTorch inside Docker. Everything runs
+  through `infra/in_container.sh`.
+- **Pin `numpy<2` on the Droplet**: this ROCm torch was built against NumPy 1.x.
+- **4-way concurrency stalls** (MIOpen cache contention, ~104 workers on 20 vCPU).
+  Run variants sequentially via `infra/run_batch.sh`.
+- **AMP is only live on GPU**, so CPU tests cannot see dtype bugs. `model.half()` on CPU
+  reproduces them -- see `tests/test_amp_dtypes.py`.
+- Spend ~$12 of $100. Credits expire **19 Oct 2026**; the billing page is authoritative.
+- **There is no reaper.** A finished batch leaves the Droplet idle and billing; ~85
+  minutes were lost that way. Check it yourself after every batch.
+
+See `docs/PROJECT_SPEC.md` Section 13 for the phase list and
+`docs/BDD100K_ADDENDUM.md` for the scale-up plan.
 
 ## Conventions
 
