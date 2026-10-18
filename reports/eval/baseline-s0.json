@@ -1,0 +1,78 @@
+{
+  "variant": "baseline",
+  "seed": 0,
+  "weights": "runs\\from-droplet\\baseline\\baseline-s0\\weights\\best.pt",
+  "overall": {
+    "mAP50": 0.5671988094010124,
+    "mAP50-95": 0.26616987812565207,
+    "precision": 0.6508565934450613,
+    "recall": 0.5255240220534062
+  },
+  "per_class": {
+    "Bicycle": 0.6736589380120948,
+    "Boat": 0.5301867058979723,
+    "Bottle": 0.4913879072396159,
+    "Bus": 0.790603555979396,
+    "Cat": 0.742055404133359,
+    "Cup": 0.4632511864396199,
+    "Motorbike": 0.6534554364801662,
+    "People": 0.5391660038298987,
+    "Table": 0.41446097646130253,
+    "car": 0.6599425941823986,
+    "chair": 0.5085026636979894,
+    "dog": 0.33971434045833504
+  },
+  "bins": {
+    "test_q1": {
+      "mAP50": 0.561011876706126,
+      "mAP50-95": 0.2673005759689365,
+      "precision": 0.6392827735716842,
+      "recall": 0.5192209035971603,
+      "images": 164.0,
+      "low_confidence": 0.0
+    },
+    "test_q2": {
+      "mAP50": 0.6359380996078242,
+      "mAP50-95": 0.29702295672649365,
+      "precision": 0.6836357978278844,
+      "recall": 0.5954471798994342,
+      "images": 163.0,
+      "low_confidence": 0.0
+    },
+    "test_q3": {
+      "mAP50": 0.5882137711361394,
+      "mAP50-95": 0.28282369079601927,
+      "precision": 0.6165413146651383,
+      "recall": 0.5908471887059111,
+      "images": 164.0,
+      "low_confidence": 0.0
+    },
+    "test_q4": {
+      "mAP50": 0.5709987602137709,
+      "mAP50-95": 0.26741464241960056,
+      "precision": 0.6489212626969342,
+      "recall": 0.5243785250758595,
+      "images": 164.0,
+      "low_confidence": 0.0
+    }
+  },
+  "cost": {
+    "params_total": 3007988.0,
+    "params_base": 3007988.0,
+    "params_added": 0.0,
+    "params_added_pct": 0.0,
+    "gflops": 3.9663375359999997,
+    "latency_ms_median": 24.351549998755218,
+    "latency_ms_p90": 25.32509999946342,
+    "latency_batch": 1,
+    "latency_half": 0.0
+  },
+  "environment": {
+    "torch": "2.14.1+cpu",
+    "hip": "None",
+    "device": "cpu",
+    "gpu": "cpu",
+    "python": "3.11.0",
+    "imgsz": "448"
+  }
+}

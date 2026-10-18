@@ -351,10 +351,66 @@ class TestWatchdogCrossesTheContainerBoundary:
         assert "EXEC_ENV" in exec_line, exec_line
 
     def test_every_cost_shaping_variable_is_forwarded(self):
-        """Anything run_job.sh reads from the environment to size or price a run."""
+        """Anything a script reads from the environment to size, price or name a run."""
         forwarded = self.body.split("FORWARD=(")[1].split(")")[0]
-        for name in ("MAX_RUNTIME_HOURS", "GPU_HOURLY_USD", "RUNS_DIR", "BUNDLE_DIR"):
+        for name in (
+            "MAX_RUNTIME_HOURS",
+            "GPU_HOURLY_USD",
+            "RUNS_DIR",
+            "BUNDLE_DIR",
+            # run_batch.sh's caps. This list was complete when written and went stale the
+            # moment run_batch.sh was added, which is why the check below exists.
+            "RUN_MAX_HOURS",
+            "BATCH_MAX_HOURS",
+            "SUMMARY",
+        ):
             assert name in forwarded, name
+
+    def test_no_script_reads_an_env_var_that_is_not_forwarded(self):
+        """Derived from the scripts, so adding a new knob cannot silently go unforwarded.
+
+        Twice now a per-run setting has been read inside the container from a variable
+        that never crossed the boundary, and both times the symptom was a cap quietly
+        reverting to its default -- the printed number and the enforced number differing.
+        """
+        import re
+
+        forwarded = set(
+            re.findall(r"[A-Z][A-Z0-9_]+", self.body.split("FORWARD=(")[1].split(")")[0])
+        )
+        # Variables these scripts legitimately own or get from elsewhere.
+        exempt = {
+            "REPO_ROOT",
+            "BASH_SOURCE",
+            "DEBIAN_FRONTEND",
+            "PIP_ROOT_USER_ACTION",
+            "YOLO_DER_IMAGE",
+            "YOLO_DER_CONTAINER",
+            "GIT_REPO_URL",
+            "GIT_REF",
+            "REMOTE_REPO",
+            "REMOTE_BUNDLE_DIR",
+            "REMOTE_RUNS_DIR",
+            "LOCAL_DIR",
+            "POLL_SECONDS",
+            "EUID",
+            "PATH",
+            "HOME",
+            "TERM",
+            "PYTHONUNBUFFERED",
+            "KAGGLE_API_TOKEN",
+            # Locals that happen to use the ${VAR:-default} shape, not external knobs.
+            "GPU_LINE",
+        }
+        missing: dict[str, set[str]] = {}
+        for name in ("run_job.sh", "run_batch.sh"):
+            body = read(name)
+            # `${VAR:-default}` is the shape of every tunable in these scripts.
+            used = set(re.findall(r"\$\{([A-Z][A-Z0-9_]+):-", body))
+            gap = used - forwarded - exempt
+            if gap:
+                missing[name] = gap
+        assert not missing, f"read in the container but never forwarded: {missing}"
 
     def test_unset_variables_are_not_forwarded_as_empty(self):
         """An empty -e would override run_job.sh's own default with the empty string."""

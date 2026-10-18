@@ -33,6 +33,13 @@ set -uo pipefail
 # the owner. Found on the live Droplet: the run plan said 6h x $1.99 = $11.94.
 FORWARD=(
   MAX_RUNTIME_HOURS
+  # run_batch.sh's own caps. Added after they were missed: the batch announced the
+  # default 2 h / 0.4 h while the caller had asked for 5 h / 1.2 h, which would have
+  # truncated every 50-epoch run at about epoch 23. Anything a script reads from the
+  # environment to size, price or name a run belongs in this list.
+  RUN_MAX_HOURS
+  BATCH_MAX_HOURS
+  SUMMARY
   RUNS_DIR
   BUNDLE_DIR
   MLFLOW_TRACKING_URI
