@@ -87,6 +87,12 @@ bundle_results() {
   local sources=(-C "$RUNS_DIR" .)
   [[ -d "$REPO_ROOT/logs" ]] && sources+=(-C "$REPO_ROOT" logs)
   [[ -d "$REPO_ROOT/reports" ]] && sources+=(-C "$REPO_ROOT" reports)
+  # The MLflow artifact store, which is NOT necessarily under RUNS_DIR. tracking.py
+  # asks for it there, but MLflow keeps an existing experiment's original location --
+  # and that default is ./mlruns, i.e. $REPO_ROOT/mlruns. Archiving only RUNS_DIR left
+  # 114 MB of plots and every registry source path behind. scripts/collect_results.py
+  # is the thorough version for teardown; this keeps the per-run bundle honest too.
+  [[ -d "$REPO_ROOT/mlruns" ]] && sources+=(-C "$REPO_ROOT" mlruns)
 
   # zstd if present, gzip otherwise. Checked rather than assumed: `tar -I zstd` on a host
   # without zstd exits non-zero having already created an empty file, which looks exactly
