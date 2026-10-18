@@ -1,0 +1,18 @@
+# E1 entropy sweep, point 1.0. The paper calls DER "entropy-aware" (Sec. 3.4) but never
+# optimises any entropy, and our der_enh_entreg run at 0.01 showed why that claim has
+# never actually been tested: train/ent_loss logged 0.01498 -- exactly
+# 0.01 * mean(3*log 4, 3*log 5) -- and moved by 0.00002 across 100 epochs. Against a
+# detection loss of order 2-6 that is ~0.3% of the gradient, so the router was never
+# pushed. This sweep asks the question properly.
+#
+# entropy_reg and load_balance are raised together, as the pair was designed (losses.py):
+# entropy pushes each image towards one path, which on its own would happily send EVERY
+# image down the same path; load_balance penalises exactly that collapse. Varying only
+# one would confound "sharper routing" with "collapsed routing".
+name: der_enh_ent10
+modules:
+  der: true
+  enhancenet: true
+  combine: sequential
+  entropy_reg: 1.0
+  load_balance: 1.0

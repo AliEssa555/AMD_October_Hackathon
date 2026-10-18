@@ -65,6 +65,33 @@ Two candidate explanations are ruled out:
   So enhancement gating discriminates and routing does not. That asymmetry is the
   interesting part: the same architecture pattern works in one module and not the other.
 
+### 2.1b Four implementations, four times the same answer
+
+The uniform-routing result is not one measurement. Every variant was instrumented
+separately, 48 images each:
+
+| run | DER routing H | EnhanceNet gate H | DER feature ΔH |
+|---|---|---|---|
+| der | 0.9997 | — | +0.0305 |
+| der_enh | 0.9999 | 0.8153 | +0.0370 |
+| der_enh_entreg | 0.9998 | 0.8136 | +0.0386 |
+| der_enh_sevcond | 0.9997 | 0.8254 | +0.0170 |
+| der_routes_enh | — | 0.8030 | — |
+| enh | — | 0.8053 | — |
+
+**Four independent DER routers, four times uniform. Four independent EnhanceNet gates,
+four times selective** (branch weights spanning roughly 0.06–0.49). `der_routes_enh` is
+the cleanest control of the set: there DER's router *is* EnhanceNet's branch gate, and the
+moment the same module is used as a gate rather than a router it discriminates at 0.8030.
+So the failure is not in the architecture pattern, the initialisation, or the training
+recipe — it is specific to routing.
+
+Feature entropy adds the nuance that keeps this honest: DER *does* change the features it
+touches (+0.017 to +0.039 normalised), so it is not inert. It applies the **same**
+transformation to every image. And in every variant the change is slightly larger on the
+brightest quartile than the darkest — the opposite of the paper's claim, though the
+per-bin sample is small enough that this is a hint, not a finding.
+
 ### 2.2 The entropy intervention never fired
 
 Extension E1 adds `entropy_reg` to push the router to commit. `train/ent_loss` logged
@@ -182,6 +209,12 @@ This happened **twice**, and the second time is the more instructive.
    "per-run cap 0.4 h" against a 52-minute run: **every run would have been killed around
    epoch 23.** Caught by reading the plan the script printed, 40 seconds after launch.
 
+A third instance followed the same shape: `env_flags` built its `-e` list with
+`printf '%s\n' "${out[@]}"`, and **`printf` with zero arguments still prints one empty
+line**, so with nothing to forward `mapfile` produced a one-element array holding `""` and
+`docker exec` died with "invalid container name or ID: value is empty". It only surfaced
+on a plain data-conversion command, which forwards nothing.
+
 - **Fix:** forward on `docker exec` as well as `docker run`, print what was forwarded, and
   add a test that *derives* the requirement instead of listing it — it scans the scripts
   for `${VAR:-default}` knobs and fails on any that is read inside the container but never
@@ -282,6 +315,40 @@ to be wrong as specified:
 - **Interview framing:** "The safeguard that failed wasn't the one that was hard to build.
   It was the one that depended on my own process staying alive. The training survived the
   session ending; the supervision didn't."
+
+### Lesson 7 — The tool decides where your results go, not your config
+
+Two bugs, found only because the owner asked "where are the runs stored and will they
+survive the Droplet?"
+
+- **The MLflow artifact store was outside every bundle.** `tracking.py` sets
+  `artifact_location` under `RUNS_DIR` when it *creates* an experiment — but MLflow keeps
+  an **existing** experiment's original location, and that default is `./mlruns`. So 118 MB
+  of plots, `results.csv` copies and MLflow-side weights sat in `/work/yolo-der/mlruns`
+  while every bundle archived `/work/runs`. All eight registered model versions pointed at
+  Droplet-absolute paths that would have dangled after teardown.
+- **A crashed run was recorded as a successful one.** Six AMP-crashed runs sat in the
+  database as `FINISHED` with zero metrics. The `teardown` callback meant to catch that
+  can never fire: Ultralytics calls `run_callbacks("teardown")` at `engine/trainer.py:527`,
+  on the happy path after `on_train_end` and **not** in a `finally`, so an exception skips
+  it and MLflow's `atexit` hook closes the dangling run as FINISHED. The registration was
+  right and the design was wrong.
+
+Fixes: `scripts/collect_results.py` *asks the database* where the artifacts are instead of
+assuming, and — the part that actually matters — **rewrites `artifact_uri`,
+`artifact_location` and `model_versions.source` to relative paths**, so the copy opens on
+any machine. Without that you get a UI full of runs with no artifacts and a registry of
+dead links. For the crash recording, `fail()` is reached two independent ways: an explicit
+`try/except` around `train()`, and an `atexit` handler registered *after* MLflow's own
+(atexit runs LIFO, so ours wins) to cover hard exits like the watchdog's SIGTERM.
+
+Measured afterwards: 3.7 MB database + 118 MB artifacts + 204 MB lean run dirs = **345 MB**
+worth keeping, against 8.2 GB if the per-epoch resume snapshots came along.
+
+- **Interview framing:** "My code asked for artifacts in one place; the library quietly
+  used another, because the experiment already existed. I'd been treating 'MLflow has it'
+  as a guarantee. Now the teardown script interrogates the store and rewrites the paths,
+  and it is verified by opening the copy with the source machine switched off."
 
 ### Smaller ones, kept because they cost real minutes
 

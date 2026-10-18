@@ -4,6 +4,11 @@
 # Run it ON THE DROPLET, from /work/yolo-der:
 #
 #   BATCH_MAX_HOURS=2 bash infra/in_container.sh bash infra/run_batch.sh der enh der_enh
+#   BATCH_MAX_HOURS=2 bash infra/in_container.sh bash infra/run_batch.sh baseline:1 baseline:2
+#
+# A variant may carry a seed as `variant:seed` (default 0). Seeds are how a delta
+# becomes a result rather than an anecdote: the ExDark ablation's whole spread across
+# seven variants was 0.0056 mAP50, which is the same order as the deltas being claimed.
 #
 # Sequential, not parallel, and deliberately so: a 4-way test on this hardware stalled.
 # Four processes spawn ~104 dataloader workers against 20 vCPU and contend on a single
@@ -61,20 +66,25 @@ for variant in "${VARIANTS[@]}"; do
     continue
   fi
 
-  bold "$variant  (${elapsed}s into the batch, ${remaining}s of budget left)"
+  # `variant:seed`, seed 0 when omitted.
+  seed="${variant##*:}"
+  if [[ "$seed" == "$variant" ]]; then seed=0; else variant="${variant%%:*}"; fi
+  run_name="$variant-s$seed"
+
+  bold "$run_name  (${elapsed}s into the batch, ${remaining}s of budget left)"
   run_start=$(date +%s)
 
   # Each run keeps its own watchdog, EXIT trap and bundle: one variant crashing must not
   # cost the batch the runs that already succeeded (hard rule 0.4).
   RUNS_DIR="$RUNS_DIR" MAX_RUNTIME_HOURS="$RUN_MAX_HOURS" GPU_HOURLY_USD="$GPU_HOURLY_USD" \
-    bash "$REPO_ROOT/infra/run_job.sh" --config "$variant"
+    bash "$REPO_ROOT/infra/run_job.sh" --config "$variant" --seed "$seed"
   status=$?
   seconds=$(( $(date +%s) - run_start ))
 
   # Read the achieved metrics straight from results.csv, so the summary does not depend
   # on parsing Ultralytics' progress output.
   read -r map50 map5095 < <(
-    python3 - "$RUNS_DIR/$variant-s0/results.csv" <<'PY'
+    python3 - "$RUNS_DIR/$run_name/results.csv" <<'PY'
 import csv, sys
 from pathlib import Path
 p = Path(sys.argv[1])
@@ -95,10 +105,10 @@ PY
     124) word=TIMEOUT ;;
     *)   word="FAILED_$status" ;;
   esac
-  printf '%s\t%s\t%s\t%s\t%s\n' "$variant" "$word" "$seconds" "${map50:-}" "${map5095:-}" \
+  printf '%s\t%s\t%s\t%s\t%s\n' "$run_name" "$word" "$seconds" "${map50:-}" "${map5095:-}" \
     >> "$SUMMARY"
   printf '\n>>> %s: %s in %ss  mAP50=%s mAP50-95=%s\n' \
-    "$variant" "$word" "$seconds" "${map50:-?}" "${map5095:-?}"
+    "$run_name" "$word" "$seconds" "${map50:-?}" "${map5095:-?}"
 done
 
 bold "Batch finished in $(( ($(date +%s) - batch_start) / 60 )) min"
