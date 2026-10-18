@@ -61,19 +61,29 @@ Rules 0.1 (explicit "yes" plus printed cost before any launch) and 0.4 are unaff
 
 ## Current state
 
-Phases 0-3 complete; Phase 4 code complete but **not yet run on a GPU**.
+Phases 0-4 complete. **Ran on a real MI300X on 17 Oct 2026.**
 
-- Training works end to end on CPU: `der_enh` and `der_enh_entreg` both completed full
-  smoke runs, including from outside the repo root. Weight transfer verified,
-  +9.51% params, 6 ReZero scales exempted from decay, `ent_loss` present in
-  `results.csv`, MLflow artifacts and a registry version written.
-- The launch path is manual: `docs/MANUAL_LAUNCH.md` -> `infra/bootstrap.sh` ->
-  `infra/run_job.sh` -> `infra/fetch_results.sh`. All three are dry-run tested on
-  Windows; none has touched an MI300X yet.
-- Next, and it needs an explicit "yes" plus a printed cost first (rule 0.1): the Phase 4
-  GPU smoke test. The concurrency measurement the spec asks for feeds the 9.3 table,
-  which has to be recomputed before Phase 5 is planned.
-- Credits expire **19 Oct 2026**. Two days. Phases 7-8 are the ones to drop.
+- Baseline is done: 100 epochs on ExDark, **mAP50 0.574 / mAP50-95 0.270** (best epoch
+  90, 0.580). Pulled home to `runs/from-droplet/` (gitignored) with `results.csv`,
+  `best.pt`, `last.pt`, `mlflow.db` and the plots. The MLflow run carries
+  `gpu=AMD Instinct MI300X VF` and `hip=6.4.43483` -- the hardware evidence the
+  hackathon needs.
+- **Measured, replacing the spec's Section 9.3 estimates:** ~6 s/epoch steady state
+  (epoch 1 is ~48 s of one-time MIOpen kernel compilation), 3.8 GB VRAM of 192 GB, and
+  **9.9 minutes for a full 100-epoch run**. The seven-variant ablation is ~70 minutes,
+  about $2.30 -- not the $75 the spec budgeted.
+- **4-way concurrency does not work and is not needed.** Four processes spawn ~104
+  dataloader workers on 20 vCPU and contend on one MIOpen kernel cache; the GPU read
+  100% busy while the logs sat frozen. A single process is already fast enough.
+- Spend so far: **~$2.80** of the $100 credit.
+- The launch path is container-based, which the spec did not anticipate: the AMD image
+  ships **no torch on the host**. See `docs/MANUAL_LAUNCH.md` ->
+  `infra/send_repo.sh` -> `infra/in_container.sh` -> `infra/bootstrap.sh` ->
+  `infra/run_job.sh`, and `scripts/unbundle.py` to open a bundle on Windows.
+- **Next: the six remaining variants against the 0.574 baseline** (Phase 5), then the
+  Phase 6 analysis. Needs an explicit "yes" plus a printed cost (rule 0.1).
+- **Credits expire 19 Oct 2026, so 18 Oct is the last working day** (rule 0.7). Phases
+  7-8 (export/API/dashboard) are the ones to drop if time runs short.
 
 See `docs/PROJECT_SPEC.md` Section 13 for the full phase list.
 
