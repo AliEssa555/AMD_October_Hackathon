@@ -58,10 +58,12 @@ class YoloDERModel(DetectionModel):
         self.severity_context = None
         self._entropy_weight = 0.0
         self._load_balance_weight = 0.0
+        self._entropy_target = "all"
         if der_cfg is not None and der_cfg.enabled:
             inject(self, der_cfg, imgsz=imgsz)
             self._entropy_weight = float(der_cfg.entropy_reg)
             self._load_balance_weight = float(der_cfg.load_balance)
+            self._entropy_target = str(getattr(der_cfg, "entropy_target", "all"))
 
     @property
     def has_extra_loss(self) -> bool:
@@ -84,6 +86,7 @@ class YoloDERModel(DetectionModel):
             self,
             entropy_weight=self._entropy_weight,
             load_balance_weight=self._load_balance_weight,
+            target=getattr(self, "_entropy_target", "all"),
         )
         # Scale the extra term the same way Ultralytics scales its own (by batch size), so
         # the relative weighting does not drift with batch size.

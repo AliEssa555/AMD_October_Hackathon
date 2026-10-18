@@ -1,0 +1,10 @@
+# E1 sweep fill-in at 2.0. Routing "turns on" somewhere between 0.1 (H=0.9996) and
+# 1.0 (H=0.6835), and performance collapses somewhere between 1.0 (mAP50 0.5638) and
+# 5.0 (0.4147). Three points cannot tell a cliff from a slope; these fill the gaps.
+name: der_enh_ent20
+modules:
+  der: true
+  enhancenet: true
+  combine: sequential
+  entropy_reg: 2.0
+  load_balance: 2.0

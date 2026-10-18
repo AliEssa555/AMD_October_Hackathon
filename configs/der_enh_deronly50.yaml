@@ -1,0 +1,16 @@
+# E1, isolated: entropy pressure on DER's router ONLY (entropy_target: der).
+#
+# The first sweep pushed every routing distribution at once, and EnhanceNet's branch gate
+# collapsed alongside the router -- normalised entropy 0.80 -> 0.47 -> 0.005 as the weight
+# went 0.1 -> 1.0 -> 5.0, with mAP50 falling to 0.4147. That made the headline claim
+# unattributable: the damage may have been the loss of a gate that was doing useful work,
+# not the cost of decisive routing. These two runs push only the router, so whatever
+# happens can be attributed to routing.
+name: der_enh_deronly50
+modules:
+  der: true
+  enhancenet: true
+  combine: sequential
+  entropy_reg: 5.0
+  load_balance: 5.0
+  entropy_target: der

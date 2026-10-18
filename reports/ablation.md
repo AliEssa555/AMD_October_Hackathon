@@ -1,20 +1,22 @@
 # Ablation
 
-Baseline: `baseline`. Deltas are mAP50 against it.
+**Noise floor: 0.0056 mAP50** (assumed, from the single-seed variant spread). A delta smaller than this is not evidence and is marked *(within noise)*.
 
-**Noise floor: 0.0056 mAP50.** That is the spread measured across all seven ExDark variants on a single seed, with identical data and hyper-parameters. A delta smaller than it is not evidence of anything, and is marked *(within noise)* below.
+Each dataset is compared against **its own** baseline; deltas are never taken across datasets, since BDD100K's absolute mAP is far lower (ten classes including traffic lights and signs, a few pixels across at 448 px).
 
-| variant | seeds | mAP50 | min-max | mAP50-95 | Δ mAP50 | +params % | GFLOPs | ms/img |
-|---|---|---|---|---|---|---|---|---|
-| `baseline` | 1 | 0.5672 | 0.5672-0.5672 | 0.2662 | +0.0000 | 0.00 | 3.97 | 24.35 |
-| `der` | 1 | 0.5688 | 0.5688-0.5688 | 0.2718 | +0.0016 *(within noise)* | 7.20 | 4.15 | 30.23 |
-| `der_enh` | 1 | 0.5657 | 0.5657-0.5657 | 0.2724 | -0.0015 *(within noise)* | 9.52 | 4.14 | 34.38 |
-| `der_enh_entreg` | 1 | 0.5721 | 0.5721-0.5721 | 0.2706 | +0.0049 *(within noise)* | 9.52 | 4.14 | 34.97 |
-| `der_enh_sevcond` | 1 | 0.5756 | 0.5756-0.5756 | 0.2677 | +0.0084 | 9.53 | 4.14 | 35.92 |
-| `der_routes_enh` | 1 | 0.5676 | 0.5676-0.5676 | 0.2747 | +0.0005 *(within noise)* | 2.32 | 3.97 | 35.49 |
-| `enh` | 1 | 0.5608 | 0.5608-0.5608 | 0.2697 | -0.0064 | 2.32 | 3.97 | 30.85 |
+## exdark
 
-## mAP50 by bin
+| variant | seeds | epochs | mAP50 | min-max | mAP50-95 | Δ mAP50 | +params % | GFLOPs | ms/img |
+|---|---|---|---|---|---|---|---|---|---|
+| `baseline` | 1 | 0 | 0.5672 | 0.5672-0.5672 | 0.2662 | +0.0000 | 0.00 | 3.97 | 24.35 |
+| `der` | 1 | 0 | 0.5688 | 0.5688-0.5688 | 0.2718 | +0.0016 *(within noise)* | 7.20 | 4.15 | 30.23 |
+| `der_enh` | 1 | 0 | 0.5657 | 0.5657-0.5657 | 0.2724 | -0.0015 *(within noise)* | 9.52 | 4.14 | 34.38 |
+| `der_enh_entreg` | 1 | 0 | 0.5721 | 0.5721-0.5721 | 0.2706 | +0.0049 *(within noise)* | 9.52 | 4.14 | 34.97 |
+| `der_enh_sevcond` | 1 | 0 | 0.5756 | 0.5756-0.5756 | 0.2677 | +0.0084 | 9.53 | 4.14 | 35.92 |
+| `der_routes_enh` | 1 | 0 | 0.5676 | 0.5676-0.5676 | 0.2747 | +0.0005 *(within noise)* | 2.32 | 3.97 | 35.49 |
+| `enh` | 1 | 0 | 0.5608 | 0.5608-0.5608 | 0.2697 | -0.0064 | 2.32 | 3.97 | 30.85 |
+
+### exdark: mAP50 by bin
 
 | variant | test_q1 | test_q2 | test_q3 | test_q4 |
 |---|---|---|---|---|
@@ -25,3 +27,4 @@ Baseline: `baseline`. Deltas are mAP50 against it.
 | `der_enh_sevcond` | 0.5973 | 0.6550 | 0.5554 | 0.5774 |
 | `der_routes_enh` | 0.5797 | 0.6845 | 0.5487 | 0.5566 |
 | `enh` | 0.5729 | 0.6371 | 0.5381 | 0.5694 |
+

@@ -52,6 +52,9 @@ class RunResult:
     variant: str
     seed: int
     weights: str
+    #: Epochs the run actually completed. A 3-epoch throughput test and a 50-epoch
+    #: experiment are both "bdd_baseline"; without this they average together.
+    epochs: int = 0
     overall: dict[str, float] = field(default_factory=dict)
     per_class: dict[str, float] = field(default_factory=dict)
     bins: dict[str, dict[str, float]] = field(default_factory=dict)
@@ -64,6 +67,7 @@ class RunResult:
             "variant": self.variant,
             "seed": self.seed,
             "weights": self.weights,
+            "epochs": self.epochs,
             "overall": self.overall,
             "per_class": self.per_class,
             "bins": self.bins,
@@ -227,13 +231,24 @@ def cost_metrics(model: Any, imgsz: int, device: str) -> dict[str, float]:
         out["params_added"] = 0.0
         out["params_added_pct"] = 0.0
 
-    with contextlib.suppress(Exception):
+    # Report *why* a measurement is missing. These were silently swallowed, and the table
+    # printed "0.00 GFLOPs" and "nan ms/img" with nothing to explain it, which is worse
+    # than an absent column: it looks like a measurement rather than a failure.
+    try:
         from ultralytics.utils.torch_utils import get_flops
 
-        out["gflops"] = float(get_flops(net, imgsz=imgsz))
+        flops = float(get_flops(net, imgsz=imgsz))
+        if flops:
+            out["gflops"] = flops
+        else:
+            out["gflops_error"] = "get_flops returned 0 (thop missing?)"
+    except Exception as exc:  # noqa: BLE001 - provenance, not correctness
+        out["gflops_error"] = f"{type(exc).__name__}: {exc}"[:200]
 
-    with contextlib.suppress(Exception):
+    try:
         out.update(measure_latency(model, imgsz, device))
+    except Exception as exc:  # noqa: BLE001
+        out["latency_error"] = f"{type(exc).__name__}: {exc}"[:200]
     return out
 
 
@@ -270,6 +285,10 @@ def evaluate_run(
     scratch = scratch or run_dir / "eval-cfg"
     model = YOLO(str(weights))
     result = RunResult(variant=variant or run_dir.name, seed=seed, weights=str(weights))
+    results_csv = run_dir / "results.csv"
+    if results_csv.is_file():
+        with contextlib.suppress(Exception):
+            result.epochs = sum(1 for _ in results_csv.open(encoding="utf-8")) - 1
 
     overall = model.val(
         data=str(materialise(data, scratch)),
@@ -357,22 +376,80 @@ def log_to_mlflow(result: RunResult, run_dir: Path) -> str | None:
 # ----------------------------------------------------------------- aggregation ----
 
 
+def dataset_of(variant: str) -> str:
+    """Which dataset a variant was trained on, from its name.
+
+    The two live in one reports directory, and a delta between them is meaningless --
+    BDD100K's absolute mAP is far lower because its ten classes include traffic lights
+    and signs that are a few pixels across at 448. The first version of this table
+    reported `bdd_der` as "-0.1925 vs baseline", comparing across datasets.
+    """
+    return "bdd100k" if variant.startswith("bdd_") else "exdark"
+
+
+def drop_short_runs(runs: list[dict]) -> tuple[list[dict], list[str]]:
+    """Remove runs that trained far fewer epochs than their peers.
+
+    `bdd_baseline` had two entries: the real 50-epoch run and a 3-epoch throughput test,
+    averaged into one row spanning 0.2427-0.3696. Anything under 60% of the longest run
+    for that variant is a smoke test, not a seed.
+    """
+    longest = max((r.get("epochs") or 0) for r in runs)
+    if longest <= 0:
+        return runs, []
+    keep, dropped = [], []
+    for r in runs:
+        if (r.get("epochs") or 0) >= 0.6 * longest:
+            keep.append(r)
+        else:
+            dropped.append(f"{r['variant']}-s{r['seed']} ({r.get('epochs', 0)} epochs)")
+    return keep or runs, dropped
+
+
+def measured_noise_floor(by_variant: dict[str, list[dict]]) -> tuple[float, str]:
+    """The widest spread seen across repeated seeds of one variant.
+
+    Prefer measurement to the hard-coded constant: with three seeds of `baseline` and
+    three of `der_enh_sevcond`, the real run-to-run spread is known rather than inferred
+    from variants that differ in architecture.
+    """
+    spreads: list[tuple[float, str]] = []
+    for variant, runs in by_variant.items():
+        vals = [r["overall"]["mAP50"] for r in runs]
+        if len(vals) >= 2:
+            spreads.append((max(vals) - min(vals), f"{variant} x{len(vals)} seeds"))
+    if not spreads:
+        return NOISE_FLOOR_MAP50, "assumed, from the single-seed variant spread"
+    worst = max(spreads)
+    return worst[0], f"measured across {worst[1]}"
+
+
 def aggregate(reports: Path, out_dir: Path, baseline: str = "baseline") -> Path:
-    """Build ``ablation.csv`` and ``ablation.md`` from the per-run JSON files."""
+    """Build ``ablation.csv`` and ``ablation.md``, one section per dataset."""
     results = [json.loads(p.read_text(encoding="utf-8")) for p in sorted(reports.glob("*.json"))]
     if not results:
         raise FileNotFoundError(f"no evaluation JSON in {reports}")
 
-    # Group by variant so multiple seeds collapse into mean and min-max.
     by_variant: dict[str, list[dict]] = {}
     for r in results:
         by_variant.setdefault(r["variant"], []).append(r)
 
-    def agg(vals: list[float]) -> tuple[float, float, float]:
-        return statistics.fmean(vals), min(vals), max(vals)
+    dropped_all: list[str] = []
+    for variant, runs in list(by_variant.items()):
+        kept, dropped = drop_short_runs(runs)
+        by_variant[variant] = kept
+        dropped_all += dropped
 
-    base_rows = by_variant.get(baseline)
-    base_map50 = statistics.fmean([r["overall"]["mAP50"] for r in base_rows]) if base_rows else None
+    floor, floor_note = measured_noise_floor(by_variant)
+
+    # One section per dataset, each against its own baseline.
+    datasets: dict[str, list[str]] = {}
+    for variant in by_variant:
+        datasets.setdefault(dataset_of(variant), []).append(variant)
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = out_dir / "ablation.csv"
+    md_path = out_dir / "ablation.md"
 
     bin_names: list[str] = []
     for r in results:
@@ -381,99 +458,148 @@ def aggregate(reports: Path, out_dir: Path, baseline: str = "baseline") -> Path:
                 bin_names.append(b)
     bin_names.sort()
 
-    out_dir.mkdir(parents=True, exist_ok=True)
-    csv_path = out_dir / "ablation.csv"
-    md_path = out_dir / "ablation.md"
-
-    header = ["variant", "seeds", "mAP50", "mAP50_min", "mAP50_max", "mAP50-95", "delta_mAP50"]
-    header += ["params_added_pct", "gflops", "latency_ms_median"]
+    header = ["dataset", "variant", "seeds", "epochs", "mAP50", "mAP50_min", "mAP50_max"]
+    header += ["mAP50-95", "delta_mAP50", "within_noise", "params_added_pct", "gflops", "ms_img"]
     header += [f"bin_{b}" for b in bin_names]
-
     lines_csv = [",".join(header)]
-    rows_md = []
-    for variant in sorted(by_variant):
-        runs = by_variant[variant]
-        m50, lo, hi = agg([r["overall"]["mAP50"] for r in runs])
-        m95 = statistics.fmean([r["overall"]["mAP50-95"] for r in runs])
-        delta = "" if base_map50 is None else f"{m50 - base_map50:+.4f}"
-        cost = runs[0].get("cost", {})
-        row = [
-            variant,
-            str(len(runs)),
-            f"{m50:.4f}",
-            f"{lo:.4f}",
-            f"{hi:.4f}",
-            f"{m95:.4f}",
-            delta,
-            f"{cost.get('params_added_pct', 0.0):.2f}",
-            f"{cost.get('gflops', float('nan')):.2f}",
-            f"{cost.get('latency_ms_median', float('nan')):.2f}",
-        ]
-        for b in bin_names:
-            vals = [
-                r["bins"][b]["mAP50"] for r in runs if b in r["bins"] and "mAP50" in r["bins"][b]
-            ]
-            row.append(f"{statistics.fmean(vals):.4f}" if vals else "")
-        lines_csv.append(",".join(row))
-        rows_md.append((variant, len(runs), m50, lo, hi, m95, delta, cost, runs))
-
-    csv_path.write_text("\n".join(lines_csv) + "\n", encoding="utf-8")
 
     md = [
         "# Ablation",
         "",
-        f"Baseline: `{baseline}`. Deltas are mAP50 against it.",
+        f"**Noise floor: {floor:.4f} mAP50** ({floor_note}). A delta smaller than this is "
+        "not evidence and is marked *(within noise)*.",
         "",
-        f"**Noise floor: {NOISE_FLOOR_MAP50:.4f} mAP50.** That is the spread measured across "
-        "all seven ExDark variants on a single seed, with identical data and "
-        "hyper-parameters. A delta smaller than it is not evidence of anything, and is "
-        "marked *(within noise)* below.",
+        "Each dataset is compared against **its own** baseline; deltas are never taken "
+        "across datasets, since BDD100K's absolute mAP is far lower (ten classes including "
+        "traffic lights and signs, a few pixels across at 448 px).",
         "",
-        "| variant | seeds | mAP50 | min-max | mAP50-95 | Δ mAP50 | +params % | GFLOPs | ms/img |",
-        "|---|---|---|---|---|---|---|---|---|",
     ]
-    for variant, n, m50, lo, hi, m95, delta, cost, _ in rows_md:
-        note = ""
-        if delta and abs(float(delta)) < NOISE_FLOOR_MAP50 and variant != baseline:
-            note = " *(within noise)*"
-        md.append(
-            f"| `{variant}` | {n} | {m50:.4f} | {lo:.4f}-{hi:.4f} | {m95:.4f} | "
-            f"{delta}{note} | {cost.get('params_added_pct', 0.0):.2f} | "
-            f"{cost.get('gflops', float('nan')):.2f} | "
-            f"{cost.get('latency_ms_median', float('nan')):.2f} |"
+    if dropped_all:
+        md += [
+            f"Excluded as smoke tests rather than seeds: {', '.join(sorted(dropped_all))}.",
+            "",
+        ]
+
+    for dataset in sorted(datasets):
+        variants = sorted(datasets[dataset])
+        base_name = f"bdd_{baseline}" if dataset == "bdd100k" else baseline
+        base_runs = by_variant.get(base_name)
+        base_map50 = (
+            statistics.fmean([r["overall"]["mAP50"] for r in base_runs]) if base_runs else None
         )
 
-    if bin_names:
-        md += ["", "## mAP50 by bin", ""]
-        md.append("| variant | " + " | ".join(bin_names) + " |")
-        md.append("|---" * (len(bin_names) + 1) + "|")
-        low_conf: set[str] = set()
-        for variant, _n, _m50, _lo, _hi, _m95, _d, _c, runs in rows_md:
-            cells = []
+        md += [
+            f"## {dataset}",
+            "",
+            "| variant | seeds | epochs | mAP50 | min-max | mAP50-95 | Δ mAP50 | "
+            "+params % | GFLOPs | ms/img |",
+            "|---|---|---|---|---|---|---|---|---|---|",
+        ]
+        for variant in variants:
+            runs = by_variant[variant]
+            vals = [r["overall"]["mAP50"] for r in runs]
+            m50, lo, hi = statistics.fmean(vals), min(vals), max(vals)
+            m95 = statistics.fmean([r["overall"]["mAP50-95"] for r in runs])
+            cost = runs[0].get("cost", {})
+            epochs = max((r.get("epochs") or 0) for r in runs)
+
+            if base_map50 is None:
+                delta, note = "", ""
+            else:
+                d = m50 - base_map50
+                delta = f"{d:+.4f}"
+                note = " *(within noise)*" if abs(d) < floor and variant != base_name else ""
+
+            # `cost` bound as a default: the closure would otherwise capture the loop
+            # variable and every row would format the last variant's numbers.
+            def fmt(key: str, spec: str = ".2f", cost: dict = cost) -> str:
+                v = cost.get(key)
+                return format(v, spec) if isinstance(v, (int, float)) else "-"
+
+            md.append(
+                f"| `{variant}` | {len(runs)} | {epochs} | {m50:.4f} | {lo:.4f}-{hi:.4f} | "
+                f"{m95:.4f} | {delta}{note} | {fmt('params_added_pct')} | "
+                f"{fmt('gflops')} | {fmt('latency_ms_median')} |"
+            )
+
+            row = [
+                dataset,
+                variant,
+                str(len(runs)),
+                str(epochs),
+                f"{m50:.4f}",
+                f"{lo:.4f}",
+                f"{hi:.4f}",
+                f"{m95:.4f}",
+                delta,
+                "yes" if note else "no",
+                fmt("params_added_pct"),
+                fmt("gflops"),
+                fmt("latency_ms_median"),
+            ]
             for b in bin_names:
-                vals = [
+                bv = [
                     r["bins"][b]["mAP50"]
                     for r in runs
                     if b in r["bins"] and "mAP50" in r["bins"][b]
                 ]
-                if any(r["bins"].get(b, {}).get("low_confidence") for r in runs):
-                    low_conf.add(b)
-                cells.append(f"{statistics.fmean(vals):.4f}" if vals else "-")
-            md.append(f"| `{variant}` | " + " | ".join(cells) + " |")
-        if low_conf:
-            counts = {}
-            for r in results:
-                for b in sorted(low_conf):
-                    if b in r["bins"]:
-                        counts[b] = int(r["bins"][b].get("images", 0))
-            detail = ", ".join(f"`{b}` ({counts.get(b, 0)} images)" for b in sorted(low_conf))
-            md += [
-                "",
-                f"**Low-confidence bins** (fewer than {MIN_BIN_IMAGES} test images): {detail}. "
-                "These are reported for completeness and should not be used to support a "
-                "claim.",
-            ]
+                row.append(f"{statistics.fmean(bv):.4f}" if bv else "")
+            lines_csv.append(",".join(row))
+        md.append("")
 
+        # Per-bin table for this dataset only.
+        ds_bins = sorted(
+            {
+                b
+                for v in variants
+                for r in by_variant[v]
+                for b in r["bins"]
+                if "mAP50" in r["bins"][b]
+            }
+        )
+        if ds_bins:
+            md += [f"### {dataset}: mAP50 by bin", ""]
+            md.append("| variant | " + " | ".join(ds_bins) + " |")
+            md.append("|---" * (len(ds_bins) + 1) + "|")
+            low_conf: dict[str, int] = {}
+            for variant in variants:
+                cells = []
+                for b in ds_bins:
+                    bv = [
+                        r["bins"][b]["mAP50"]
+                        for r in by_variant[variant]
+                        if b in r["bins"] and "mAP50" in r["bins"][b]
+                    ]
+                    for r in by_variant[variant]:
+                        entry = r["bins"].get(b, {})
+                        if entry.get("low_confidence"):
+                            low_conf[b] = int(entry.get("images", 0))
+                    cells.append(f"{statistics.fmean(bv):.4f}" if bv else "-")
+                md.append(f"| `{variant}` | " + " | ".join(cells) + " |")
+            if low_conf:
+                detail = ", ".join(f"`{b}` ({n} images)" for b, n in sorted(low_conf.items()))
+                md += [
+                    "",
+                    f"**Low-confidence bins** (under {MIN_BIN_IMAGES} test images): {detail}. "
+                    "Reported for completeness; they cannot support a claim.",
+                ]
+            md.append("")
+
+    # Surface failed cost measurements rather than printing 0.00 and nan.
+    problems = sorted(
+        {
+            f"`{r['variant']}`: {r['cost'][k]}"
+            for r in results
+            for k in ("gflops_error", "latency_error")
+            if k in r.get("cost", {})
+        }
+    )
+    if problems:
+        md += ["## Measurements that failed", ""]
+        md += [f"- {p}" for p in problems[:10]]
+        md.append("")
+
+    csv_path.write_text("\n".join(lines_csv) + "\n", encoding="utf-8")
     md_path.write_text("\n".join(md) + "\n", encoding="utf-8")
     return md_path
 

@@ -19,6 +19,9 @@ from yolo_der.models.common import RecordingMixin
 
 EPS = 1e-8
 
+#: Which modules the E1 regularisers may act on.
+VALID_TARGETS = frozenset({"all", "der", "enhancenet"})
+
 
 def routing_entropy(p: torch.Tensor) -> torch.Tensor:
     """Mean Shannon entropy of a batch of routing distributions.
@@ -60,16 +63,42 @@ def load_balance(p: torch.Tensor) -> torch.Tensor:
     return (q * torch.log(n * q + EPS)).sum()
 
 
-def collect_routing(model: nn.Module) -> list[torch.Tensor]:
-    """Gather the live routing weights that every recording module stashed this forward.
+def collect_routing(model: nn.Module, target: str = "all") -> list[torch.Tensor]:
+    """Gather the live routing weights that recording modules stashed this forward.
 
     Modules only populate ``routing_for_loss`` when built with ``collect_for_loss=True``,
     and they clear it at the start of each forward, so a stale graph is never reused.
+
+    Args:
+        model: the model whose modules were just run forward.
+        target: ``"all"``, ``"der"`` or ``"enhancenet"`` -- which modules the regularisers
+            act on.
+
+    Why ``target`` exists: the first entropy sweep pushed **every** routing distribution at
+    once, and EnhanceNet's branch gate collapsed alongside DER's router (normalised entropy
+    0.80 -> 0.47 -> 0.005 as the weight went 0.1 -> 1.0 -> 5.0). The accompanying -0.15
+    mAP50 therefore could not be attributed to decisive routing: it may have been the loss
+    of a gate that was doing useful work. Targeting one module at a time is what makes the
+    claim attributable.
     """
+    from yolo_der.models.der import DER
+
+    # Raise rather than fall through. A typo in `entropy_target` would otherwise silently
+    # push every module -- i.e. quietly run a different experiment from the one named in
+    # the config, which is the failure this whole targeting change exists to prevent.
+    if target not in VALID_TARGETS:
+        raise ValueError(f"entropy_target must be one of {sorted(VALID_TARGETS)}, got {target!r}")
+
     out: list[torch.Tensor] = []
     for module in model.modules():
-        if isinstance(module, RecordingMixin) and module.routing_for_loss is not None:
-            out.append(module.routing_for_loss)
+        if not isinstance(module, RecordingMixin) or module.routing_for_loss is None:
+            continue
+        is_der = isinstance(module, DER)
+        if target == "der" and not is_der:
+            continue
+        if target == "enhancenet" and is_der:
+            continue
+        out.append(module.routing_for_loss)
     return out
 
 
@@ -78,6 +107,7 @@ def regularisers(
     *,
     entropy_weight: float = 0.0,
     load_balance_weight: float = 0.0,
+    target: str = "all",
 ) -> tuple[torch.Tensor, dict[str, float]]:
     """Return ``(total, breakdown)`` for the enabled routing regularisers.
 
@@ -87,6 +117,7 @@ def regularisers(
             because the term is added to the loss and entropy is minimised. Default 0.01
             in ``der_enh_entreg``.
         load_balance_weight: weight on the collapse penalty. Default 0.01.
+        target: which modules to push -- ``"all"``, ``"der"`` or ``"enhancenet"``.
 
     Returns:
         A scalar tensor (0 and detached when both weights are 0, so the baseline path
@@ -97,7 +128,7 @@ def regularisers(
     if entropy_weight == 0.0 and load_balance_weight == 0.0:
         return zero, {}
 
-    weights = collect_routing(model)
+    weights = collect_routing(model, target)
     if not weights:
         return zero, {}
 

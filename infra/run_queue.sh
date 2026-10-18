@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 # Chain the rest of the night's work so it survives this SSH session ending.
 #
-# Run it ON THE DROPLET, detached:
+# Run it ON THE DROPLET, detached, and **inside the container**:
 #
 #   cd /work/yolo-der
-#   nohup bash infra/run_queue.sh > /work/queue.log 2>&1 < /dev/null &
+#   nohup bash infra/in_container.sh bash infra/run_queue.sh > /work/queue.log 2>&1 < /dev/null &
+#
+# The `in_container.sh` wrapper is not optional. The AMD image ships no torch on the
+# host, so a queue launched directly on the host fails every run instantly with
+# "no ROCm GPU visible -- refusing to start a paid run" and then tries to import
+# yolo_der from a Python that has never heard of it. Learned twice now: once when
+# bootstrap.sh first ran, and once here, launching this very script.
 #
 # It waits for any batch already running, then trains, then evaluates, then collects
 # everything into /work/takehome. Each stage logs its own file, and a stage failing does
@@ -27,6 +33,18 @@ export GPU_HOURLY_USD="${GPU_HOURLY_USD:-1.99}"
 
 cd "$REPO"
 
+# Refuse early rather than failing seven runs in four seconds. This script is the one
+# that chains the night together, so a mislaunch here wastes the whole window.
+if ! python3 -c 'import torch, sys; sys.exit(0 if torch.cuda.is_available() else 1)' 2>/dev/null; then
+  printf '[31mrun_queue.sh is not inside the ROCm container (no GPU-capable torch).
+'
+  printf 'Relaunch it as:
+'
+  printf '  nohup bash infra/in_container.sh bash infra/run_queue.sh > /work/queue.log 2>&1 &[0m
+'
+  exit 2
+fi
+
 stamp() { date -u '+%Y-%m-%dT%H:%M:%SZ'; }
 bold()  { printf '\n\033[1m######## %s  [%s]\033[0m\n' "$1" "$(stamp)"; }
 
@@ -43,8 +61,12 @@ printf '  clear after %s min\n' "$waited"
 # ---------------------------------------------------------------- 1. training ----
 # The E1 entropy sweep first: it is the question nobody has actually asked, and it is
 # cheap. Then seeds, which turn every delta already measured into a result or a non-result.
+# 0.6 h per run against a measured ~10 min for 100 ExDark epochs, i.e. 3.5x margin.
+# The BDD batch used 1.2 h against a 73-minute der_enh run -- 1.15x -- and the
+# watchdog duly killed it two epochs short. Module variants run ~40% slower per epoch
+# than the baseline they were timed against, so the margin has to cover that.
 bold "Stage 1: entropy sweep + seeds"
-RUN_MAX_HOURS=0.4 BATCH_MAX_HOURS=2.5 SUMMARY="$RUNS/night-summary.tsv" \
+RUN_MAX_HOURS=0.6 BATCH_MAX_HOURS=2.5 SUMMARY="$RUNS/night-summary.tsv" \
   bash "$REPO/infra/run_batch.sh" \
     der_enh_ent01 der_enh_ent10 der_enh_ent50 \
     baseline:1 baseline:2 der_enh_sevcond:1 der_enh_sevcond:2 \

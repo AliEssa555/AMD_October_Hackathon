@@ -115,6 +115,7 @@ class YoloDERTrainer(DetectionTrainer):
             return
         inject(model, der_cfg, imgsz=imgsz)
         model._entropy_weight = float(der_cfg.entropy_reg)
+        model._entropy_target = str(getattr(der_cfg, "entropy_target", "all"))
         model._load_balance_weight = float(der_cfg.load_balance)
 
     @staticmethod

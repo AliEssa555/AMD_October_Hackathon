@@ -30,4 +30,8 @@ modules:
   der_paths: 4
   severity_cond: false
   entropy_reg: 0.0
+  # Which modules the E1 regularisers push: all | der | enhancenet. "der" isolates the
+  # router, so an effect can be attributed to routing rather than to EnhanceNet's gate
+  # collapsing at the same time (the confound in the first sweep).
+  entropy_target: all
   load_balance: 0.0

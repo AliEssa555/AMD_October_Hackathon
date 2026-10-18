@@ -53,6 +53,10 @@ class ModulesConfig:
     der_paths: int = 4
     severity_cond: bool = False
     entropy_reg: float = 0.0
+    #: Which modules the E1 regularisers act on: "all", "der" or "enhancenet".
+    #: "der" isolates the router, so a change can be attributed to routing rather
+    #: than to EnhanceNet's gate collapsing at the same time.
+    entropy_target: str = "all"
     load_balance: float = 0.0
 
     def __post_init__(self) -> None:
