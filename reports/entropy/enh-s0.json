@@ -1,0 +1,52 @@
+{
+  "run": "enh-s0",
+  "images": 48,
+  "per_module": {
+    "EnhanceNet": {
+      "routing_entropy_norm": 0.8052687640819285,
+      "max_weight": 0.49156094694303143,
+      "min_weight": 0.05869442097739213,
+      "feature_entropy_before": 0.7712786491303834,
+      "feature_entropy_after": 0.794815715272206,
+      "feature_entropy_delta": 0.02353706614182253,
+      "paths": 5,
+      "verdict": "decisive"
+    }
+  },
+  "per_dark_bin": {
+    "q1": {
+      "images": 10,
+      "routing_entropy_norm": 0.8000450591246288,
+      "feature_entropy_delta": 0.023276241325462858
+    },
+    "q2": {
+      "images": 7,
+      "routing_entropy_norm": 0.8007856891268775,
+      "feature_entropy_delta": 0.02414596078008236
+    },
+    "q3": {
+      "images": 12,
+      "routing_entropy_norm": 0.8006550752454333,
+      "feature_entropy_delta": 0.024000340716965083
+    },
+    "q4": {
+      "images": 19,
+      "routing_entropy_norm": 0.8125836504133124,
+      "feature_entropy_delta": 0.023157418288878705
+    }
+  },
+  "per_layer": {
+    "model.4.enhance.enh": {
+      "routing_entropy_norm": 0.8127486469844977,
+      "feature_entropy_delta": 3.153326300283273e-05
+    },
+    "model.6.enhance.enh": {
+      "routing_entropy_norm": 0.6348836434384187,
+      "feature_entropy_delta": 0.06062792699716132
+    },
+    "model.9.enhance.enh": {
+      "routing_entropy_norm": 0.968174001822869,
+      "feature_entropy_delta": 0.009951738165303444
+    }
+  }
+}
