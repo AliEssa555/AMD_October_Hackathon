@@ -41,6 +41,7 @@ from torch import nn
 
 from yolo_der.models.common import (
     RecordingMixin,
+    apply_in,
     fp32_math,
     gap,
     hidden_width,
@@ -184,7 +185,7 @@ class DER(nn.Module, RecordingMixin):
                 if cond is None:
                     raise ValueError(f"DER was built with cond_dim={self.cond_dim} but cond=None")
                 z = torch.cat([z, cond.to(z.dtype).reshape(z.shape[0], -1)], dim=1)
-            logits = self.router(z)  # Eq. 1
+            logits = apply_in(self.router, z)  # Eq. 1
             return torch.softmax(logits / self.temperature, dim=1)  # Eq. 2
 
     def forward(self, x: torch.Tensor, cond: torch.Tensor | None = None) -> torch.Tensor:
@@ -203,7 +204,7 @@ class DER(nn.Module, RecordingMixin):
             # that is not a branch on a tensor value, so the graph stays ONNX-traceable.
             delta = torch.zeros_like(xf)
             for n, path in enumerate(self.paths, start=1):
-                delta = delta + weights[:, n, None, None, None] * path(xf)
+                delta = delta + weights[:, n, None, None, None] * apply_in(path, xf)
             out = xf + self.lambda_der.float() * delta  # ReZero residual
 
         self._capture(routing=weights)

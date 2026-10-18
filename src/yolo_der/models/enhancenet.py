@@ -49,6 +49,7 @@ from torch import nn
 
 from yolo_der.models.common import (
     RecordingMixin,
+    apply_in,
     depthwise_blur,
     fp32_math,
     gap,
@@ -159,7 +160,8 @@ class EnhanceNet(nn.Module, RecordingMixin):
             raise RuntimeError("built with external_gate=True; pass gate=... to forward()")
         with fp32_math(x) as xf:
             z = self._summary(xf, cond)
-            return torch.softmax(self.gate_fc2(torch.relu(self.gate_fc1(z))), dim=1)
+            h = torch.relu(apply_in(self.gate_fc1, z))
+            return torch.softmax(apply_in(self.gate_fc2, h), dim=1)
 
     def forward(
         self,
@@ -186,10 +188,10 @@ class EnhanceNet(nn.Module, RecordingMixin):
             sigma = xf.std(dim=(2, 3), keepdim=True, unbiased=False)
             z_score = (xf - mu) / (sigma + EPS)
 
-            h = self.trunk_act(self.trunk(self._summary(xf, cond)))
+            h = self.trunk_act(apply_in(self.trunk, self._summary(xf, cond)))
 
             def per_channel(head: nn.Linear) -> torch.Tensor:
-                return head(h)[:, :, None, None]  # (B, C) -> (B, C, 1, 1)
+                return apply_in(head, h)[:, :, None, None]  # (B, C) -> (B, C, 1, 1)
 
             # --- Eq. 3: tone --------------------------------------------------------
             # gamma in [1/3, 3] via 3^tanh(a); 1 at init.
@@ -209,8 +211,9 @@ class EnhanceNet(nn.Module, RecordingMixin):
 
             # --- Eq. 5: detail ------------------------------------------------------
             # Unsharp mask with a fixed Gaussian. kappa is one scalar per sample.
-            kappa = 2.0 * torch.sigmoid(self.head_kappa(h))[:, :, None, None]
-            blurred = depthwise_blur(xf, self.blur_kernel)
+            kappa = 2.0 * torch.sigmoid(apply_in(self.head_kappa, h))[:, :, None, None]
+            # .float(): blur_kernel is a buffer, so model.half() halves it as well.
+            blurred = depthwise_blur(xf, self.blur_kernel.float())
             f_detail = xf + kappa * (xf - blurred)
 
             # --- Eq. 6: white balance ----------------------------------------------

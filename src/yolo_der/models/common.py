@@ -69,6 +69,35 @@ def fp32_math(x: torch.Tensor) -> Iterator[torch.Tensor]:
         yield x.float()
 
 
+def parameter_dtype(module: nn.Module) -> torch.dtype:
+    """Return the dtype of ``module``'s own parameters (buffers as a fallback).
+
+    ``torch.float32`` when it owns neither, which keeps parameter-free modules working.
+    """
+    for p in module.parameters(recurse=True):
+        return p.dtype
+    for b in module.buffers(recurse=True):
+        return b.dtype
+    return torch.float32
+
+
+def apply_in(module: nn.Module, x: torch.Tensor) -> torch.Tensor:
+    """Call ``module`` at its own parameter dtype, returning fp32.
+
+    This is the bridge between our fp32 maths and a model someone else may have halved.
+    Ultralytics validates with ``model.half()`` -- ``args.half`` defaults to True on
+    CUDA/ROCm -- so inside :func:`fp32_math` the activations were Float while these
+    weights had become Half, and every ``Linear``/``Conv2d`` raised "mat1 and mat2 must
+    have the same dtype, but got Float and Half". It cost six GPU runs to find, because
+    AMP never engages on CPU and so no local test could reproduce it.
+
+    Aligning on the parameters means: fp32 in training (parameters are fp32 there, so
+    this is a no-op), and half during a halved validation pass, which is exactly what the
+    rest of that halved model is doing anyway.
+    """
+    return module(x.to(parameter_dtype(module))).float()
+
+
 def gaussian_kernel2d(size: int = 5, sigma: float = 1.0) -> torch.Tensor:
     """Return a normalised 2-D Gaussian kernel of shape ``(size, size)``.
 
@@ -158,6 +187,8 @@ __all__ = [
     "count_added_parameters",
     "depthwise_blur",
     "fp32_math",
+    "apply_in",
+    "parameter_dtype",
     "gap",
     "gaussian_kernel2d",
     "hidden_width",
