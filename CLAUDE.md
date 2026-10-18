@@ -61,66 +61,65 @@ Rules 0.1 (explicit "yes" plus printed cost before any launch) and 0.4 are unaff
 
 ## Current state
 
-Phases 0-5 complete on ExDark, Phase 6 half written. **See
-`docs/ENGINEERING_LOG.md`** for the full account, including every mistake and fix --
-that file is the one to read first.
+**Phases 0-6 complete. All GPU work is finished and pulled home; the Droplet is
+destroyed.** Read `docs/ENGINEERING_LOG.md` first -- it has the full account,
+including every mistake and how it was found.
 
-### The finding that matters
+### The result
 
-**The DER router does not route.** Normalised routing entropy is 0.9997-0.9999 (1.0 =
-uniform) in every variant, with per-path weights hugging 0.25 for every image. The
-paper's "dynamic" routing is a fixed equal-weight ensemble of four conv paths here.
+**The DER router does not route, and forcing it to is catastrophic.**
 
-- Not a dead module: ReZero scales moved to -0.33..+0.27, so the modules do train.
-- Not a broken pattern in general: EnhanceNet's branch gate *is* non-uniform, H~0.82.
-- The E1 intervention never fired: `train/ent_loss` logged 0.01498, which is exactly
-  `0.01 * mean(3*log 4, 3*log 5)`, so the term is correct but ~100x too weak against a
-  detection loss of order 2-6. **`entropy_reg` needs to be nearer 1.0** for the
-  question to have been asked. This is the cheapest high-value experiment left.
+- Normalised routing entropy 0.9997-0.9999 (1.0 = uniform) across four independent
+  DER implementations; EnhanceNet's gate is selective at ~0.82. In `der_routes_enh`
+  the same module discriminates as a gate and not as a router.
+- The E1 entropy penalty was ~100x too weak as configured (0.01498 = exactly
+  `0.01 * mean(3*log4, 3*log5)`). Swept properly it produces a cliff: at weight 5.0
+  routing entropy falls to 0.0147 and mAP50 to **0.3220**, i.e. **-0.257**.
+- `entropy_target: der` isolates the router, so that collapse is attributable to
+  routing rather than to EnhanceNet's gate dying alongside it. DER-only at 5.0 is
+  *worse* (0.3220) than all-modules (0.4405).
+- **Measured noise floor 0.0115 mAP50** from three baseline seeds. Every ablation
+  delta is below it, including our own E3 extension, which looked like +0.0084 on one
+  seed and is +0.0090 against a 0.0115 floor on three.
+- Cost: +9.5% params (inside the paper's <10% claim) but **+41% latency**, no gain.
 
-### ExDark ablation (7 variants, 100 epochs, seed 0)
+### Where everything is
 
-| variant | mAP50 | delta | +params% | ms/img |
-|---|---|---|---|---|
-| baseline | 0.5672 | -- | 0.00 | 24.35 |
-| der | 0.5688 | +0.0016 (noise) | 7.20 | 30.23 |
-| der_enh | 0.5657 | -0.0015 (noise) | 9.52 | 34.38 |
-| der_enh_entreg | 0.5721 | +0.0049 (noise) | 9.52 | 34.97 |
-| der_enh_sevcond | **0.5756** | **+0.0084** | 9.53 | 35.92 |
+- `runs/from-droplet/takehome-final.tar.zst` (gitignored) -- the full MLflow store,
+  checkpoints, plots and results. Open it with `scripts/unbundle.py`, then
+  `mlflow ui --backend-store-uri sqlite:///mlflow.db` from the extracted folder. The
+  artifact paths inside the database are rewritten relative, so it works with no
+  Droplet (`scripts/collect_results.py` does that).
+- `reports/ablation.md`, `reports/eval/*.json`, `reports/entropy/*.json`,
+  `reports/gates/*.parquet`, `reports/figures/*.png`.
 
-- **Noise floor 0.0056 mAP50**, measured as the spread across all seven variants on one
-  seed. `evaluate.py` prints *(within noise)* below it; do not report smaller deltas.
-- **+41% latency for no mAP gain** (24.35 -> 34.38 ms/img). Params stay under the
-  paper's <10% claim, so a reproduction reporting only params would miss the real cost.
-- The only delta above noise is `der_enh_sevcond` -- *our* E3 extension -- and its
-  darkest-quartile gain is +0.036 (0.5610 -> 0.5973). One seed, 164 images: a lead.
-- **Seeds are the gap.** Deltas of 0.002-0.008 against a 0.0056 floor cannot be settled
-  on one seed. 3 seeds x 2 variants is ~25 min and ~$2.
+### If you pick this up again
 
-### BDD100K (Addendum A)
+Credits expired 19 Oct 2026, so any further GPU work needs a new arrangement. What is
+left, in value order:
 
-Converted and training: 66,312 / 3,551 / 10,000 at 448 px, **62.4 s/epoch**
-(1,056 img/s -- faster per image than ExDark, because 1280x720 caches to 448x252).
-50 epochs = 52 min = $1.74/run. Four variants = 3.5 h = $6.90.
+1. **Seeds for BDD100K.** Every BDD number is one seed; the ExDark floor of 0.0115
+   says that cannot settle a 0.004 delta.
+2. **The per-condition BDD table** (Addendum A.6): `tod_night` vs `tod_daytime` is the
+   comparison the dataset was chosen for, and `evaluate.py` already computes the bins.
+3. **Phase 7-8** (export, API, dashboard, write-up) -- never started, and droppable.
 
-- `tod_night` has 3,929 test images, so the paper's night claim is testable.
-- `wx_foggy` has **13**, so its fog claim is not. `evaluate.py` flags bins under 100.
+Everything runs on CPU against the pulled artifacts except (1).
 
-### Operational facts
+### Operational facts, if a Droplet is ever launched again
 
-- **No torch on the host**; the AMD image keeps PyTorch inside Docker. Everything runs
-  through `infra/in_container.sh`.
-- **Pin `numpy<2` on the Droplet**: this ROCm torch was built against NumPy 1.x.
-- **4-way concurrency stalls** (MIOpen cache contention, ~104 workers on 20 vCPU).
-  Run variants sequentially via `infra/run_batch.sh`.
-- **AMP is only live on GPU**, so CPU tests cannot see dtype bugs. `model.half()` on CPU
-  reproduces them -- see `tests/test_amp_dtypes.py`.
-- Spend ~$12 of $100. Credits expire **19 Oct 2026**; the billing page is authoritative.
-- **There is no reaper.** A finished batch leaves the Droplet idle and billing; ~85
-  minutes were lost that way. Check it yourself after every batch.
+- **No torch on the host**: the AMD image keeps PyTorch in Docker. Everything goes
+  through `infra/in_container.sh`, including `run_queue.sh` itself.
+- **Pin `numpy<2`** on the Droplet; this ROCm torch was built against NumPy 1.x.
+- **4-way concurrency stalls** (MIOpen cache contention). Run sequentially.
+- **Verify uploads by md5, not by syntax.** A 6-line stub compiles fine and cost an
+  evening.
+- **Never scp to a path a running job reads from.**
+- **AMP is only live on GPU**; `model.half()` on CPU reproduces its dtype bugs.
+- **There is no reaper.** Check the console yourself after every batch.
+- Total spend: ~$27 of the $100 credit.
 
-See `docs/PROJECT_SPEC.md` Section 13 for the phase list and
-`docs/BDD100K_ADDENDUM.md` for the scale-up plan.
+See `docs/PROJECT_SPEC.md` Section 13 and `docs/BDD100K_ADDENDUM.md`.
 
 ## Conventions
 

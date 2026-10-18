@@ -1,78 +1,42 @@
 {
   "variant": "der_enh_sevcond",
   "seed": 0,
-  "weights": "runs\\from-droplet\\ablation\\der_enh_sevcond-s0\\weights\\best.pt",
+  "weights": "/work/runs/der_enh_sevcond-s0/weights/best.pt",
   "overall": {
-    "mAP50": 0.5756302619330033,
-    "mAP50-95": 0.2677023412095395,
-    "precision": 0.6409405814111483,
-    "recall": 0.5425305005351017
+    "mAP50": 0.5756305230729152,
+    "mAP50-95": 0.2677021048960017,
+    "precision": 0.6409405847997064,
+    "recall": 0.5425306082845728
   },
   "per_class": {
     "Bicycle": 0.6811264437133848,
-    "Boat": 0.6006309357595889,
-    "Bottle": 0.5004280194384934,
+    "Boat": 0.6006311016793744,
+    "Bottle": 0.5004310095236428,
     "Bus": 0.7826982880980712,
     "Cat": 0.7395759034820812,
     "Cup": 0.46564609256073364,
     "Motorbike": 0.6733988179225838,
-    "People": 0.5254973363122711,
+    "People": 0.525497313986278,
     "Table": 0.4768921030205004,
     "car": 0.6723448410651649,
     "chair": 0.4954936235911443,
     "dog": 0.2938307382320218
   },
-  "bins": {
-    "test_q1": {
-      "mAP50": 0.5973370574360619,
-      "mAP50-95": 0.2932251878740047,
-      "precision": 0.6321823403796866,
-      "recall": 0.6053962083861788,
-      "images": 164.0,
-      "low_confidence": 0.0
-    },
-    "test_q2": {
-      "mAP50": 0.6550022956982534,
-      "mAP50-95": 0.29812810077317276,
-      "precision": 0.6582869917060007,
-      "recall": 0.651607487167093,
-      "images": 163.0,
-      "low_confidence": 0.0
-    },
-    "test_q3": {
-      "mAP50": 0.5554392058336663,
-      "mAP50-95": 0.26884490077198164,
-      "precision": 0.651073283075072,
-      "recall": 0.5041427834084905,
-      "images": 164.0,
-      "low_confidence": 0.0
-    },
-    "test_q4": {
-      "mAP50": 0.5773956237282197,
-      "mAP50-95": 0.26901529825903137,
-      "precision": 0.6711948411922473,
-      "recall": 0.535386465574525,
-      "images": 164.0,
-      "low_confidence": 0.0
-    }
-  },
+  "bins": {},
   "cost": {
     "params_total": 3294616.0,
     "params_base": 3007988.0,
     "params_added": 286628.0,
     "params_added_pct": 9.528894397185095,
-    "gflops": 4.138946688,
-    "latency_ms_median": 35.92369999932998,
-    "latency_ms_p90": 38.04899999886402,
-    "latency_batch": 1,
-    "latency_half": 0.0
+    "gflops": 0.0
   },
   "environment": {
-    "torch": "2.14.1+cpu",
-    "hip": "None",
-    "device": "cpu",
-    "gpu": "cpu",
-    "python": "3.11.0",
+    "torch": "2.6.0+git684f6f2",
+    "hip": "6.4.43483-a187df25c",
+    "device": "0",
+    "gpu": "AMD Instinct MI300X VF",
+    "python": "3.12.10",
     "imgsz": "448"
-  }
+  },
+  "epochs": 100
 }

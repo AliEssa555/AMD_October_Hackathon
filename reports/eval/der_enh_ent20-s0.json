@@ -1,0 +1,43 @@
+{
+  "variant": "der_enh_ent20",
+  "seed": 0,
+  "weights": "/work/runs/der_enh_ent20-s0/weights/best.pt",
+  "epochs": 100,
+  "overall": {
+    "mAP50": 0.5755472732447932,
+    "mAP50-95": 0.2797664332859824,
+    "precision": 0.6798409823402838,
+    "recall": 0.5132091307210561
+  },
+  "per_class": {
+    "Bicycle": 0.625117295052534,
+    "Boat": 0.5451377674052336,
+    "Bottle": 0.5159633659747083,
+    "Bus": 0.8358473449473203,
+    "Cat": 0.7551463624334447,
+    "Cup": 0.4976277791875138,
+    "Motorbike": 0.6788359476866197,
+    "People": 0.5484836486466349,
+    "Table": 0.49878826540884924,
+    "car": 0.6539882571681918,
+    "chair": 0.4898286773263111,
+    "dog": 0.26180256770015664
+  },
+  "bins": {},
+  "cost": {
+    "params_total": 3294424.0,
+    "params_base": 3007988.0,
+    "params_added": 286436.0,
+    "params_added_pct": 9.522511392997579,
+    "gflops_error": "get_flops returned 0 (thop missing?)",
+    "latency_error": "RuntimeError: Invalid device string: '0'"
+  },
+  "environment": {
+    "torch": "2.6.0+git684f6f2",
+    "hip": "6.4.43483-a187df25c",
+    "device": "0",
+    "gpu": "AMD Instinct MI300X VF",
+    "python": "3.12.10",
+    "imgsz": "448"
+  }
+}

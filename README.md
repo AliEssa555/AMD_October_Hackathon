@@ -12,44 +12,77 @@ Cloud (DigitalOcean).
 
 ## Headline result
 
-**The router does not route.** Normalised routing entropy is **0.9997–0.9999** (1.0 =
-perfectly uniform) in every variant, with per-path weights hugging 0.25 for every image.
-In this reproduction the paper's "Dynamic Enhancement Routing" behaves as a fixed
-equal-weight ensemble of four conv paths.
+**The router does not route, and when forced to, the detector collapses.**
 
-This is not a dead module — the ReZero scales move well off zero, so the modules do train
-and contribute. And it is not a flaw in the pattern generally: EnhanceNet's branch gate
-*is* non-uniform at H≈0.82. Enhancement gating discriminates; routing does not.
+Normalised routing entropy is **0.9997–0.9999** (1.0 = perfectly uniform) across four
+independent DER implementations, with per-path weights hugging 0.25 for every image. The
+paper's "Dynamic Enhancement Routing" behaves here as a fixed equal-weight ensemble.
 
-| variant | mAP50 | Δ vs baseline | +params % | ms/img |
-|---|---|---|---|---|
-| baseline | 0.5672 | — | 0.00 | **24.35** |
-| der | 0.5688 | +0.0016 *(within noise)* | 7.20 | 30.23 |
-| der_enh | 0.5657 | −0.0015 *(within noise)* | 9.52 | 34.38 |
-| der_enh_entreg | 0.5721 | +0.0049 *(within noise)* | 9.52 | 34.97 |
-| **der_enh_sevcond** | **0.5756** | **+0.0084** | 9.53 | 35.92 |
+That is not a dead module — the ReZero scales train well away from zero — and not a flaw
+in the pattern, because EnhanceNet's branch gate *is* selective at H≈0.82. In
+`der_routes_enh`, where DER's router **is** EnhanceNet's gate, the same module
+discriminates when used as a gate and does not when used as a router.
 
-ExDark test split, 100 epochs, seed 0, 448 px. **Noise floor 0.0056 mAP50**, measured as
-the spread across all seven variants under identical settings — deltas below it are not
-evidence, and `evaluate.py` labels them so.
+The paper's own remedy is an entropy penalty. It had never been tested: at the configured
+0.01 the loss term is `0.01 × mean(3·log4, 3·log5) = 0.01498`, about 0.3% of a detection
+loss of order 2–6. Running the sweep properly gives a cliff:
 
-Two things a mAP-only table would hide:
+| `entropy_reg` | target | DER routing H | mAP50 |
+|---|---|---|---|
+| 0.01 | all | 0.9998 | 0.5850 |
+| 0.1 | all | 0.9996 | 0.5858 |
+| 0.5 | all | — | 0.5811 |
+| 1.0 | all | 0.6835 | 0.5756 |
+| **1.0** | **DER only** | — | **0.5877** |
+| 5.0 | all | 0.0147 | 0.4405 |
+| **5.0** | **DER only** | — | **0.3220** |
 
-- **Added parameters stay under the paper's <10% claim, but latency rises 41%** (24.35 →
-  34.38 ms/img) for no mAP gain.
-- The only delta above the noise floor belongs to `der_enh_sevcond`, an **extension of
-  ours** (severity-conditioned gates), not to the paper's mechanism. Its gain concentrates
-  in the darkest test quartile: 0.5610 → **0.5973**. One seed, 164 images — a lead worth
-  three seeds, not a result.
+**The regulariser works** — at 5.0 one path takes 0.99 — and **a decisive router is
+catastrophic**: −0.257 mAP50 against baseline. Targeting DER alone is *worse* than
+targeting both modules, which is what makes the collapse attributable to routing rather
+than to EnhanceNet's gate dying alongside it.
 
-### Caveats stated up front
+### The ablation, and why none of it is a win
 
-- **One seed per variant.** Deltas of 0.002–0.008 against a 0.0056 noise floor cannot be
-  settled this way. The honest reading of the ExDark table is "no clear difference".
-- **`entropy_reg` was ~100× too small** (logged loss 0.01498, exactly
-  `0.01 × mean(3·log4, 3·log5)`), so the paper's "entropy-aware" claim has not yet been
-  tested, only measured.
-- **BDD100K cannot test the fog claim**: 13 foggy test images. It can test night — 3,929.
+| variant | seeds | mAP50 | Δ vs baseline | +params % | ms/img |
+|---|---|---|---|---|---|
+| baseline | 3 | 0.5792 | — | 0.00 | **24.35** |
+| der | 1 | 0.5688 | within noise | 7.20 | 30.23 |
+| enh | 1 | 0.5608 | within noise | 2.32 | 30.85 |
+| der_enh | 1 | 0.5657 | within noise | 9.52 | 34.38 |
+| der_enh_sevcond | 3 | 0.5882 | +0.0090, within noise | 9.53 | 35.92 |
+
+**Measured noise floor: 0.0115 mAP50**, the spread across three seeds of the baseline
+alone. Every delta in the table is smaller than that.
+
+Our own extension (E3, severity-conditioned gates) looked like the one real gain at
++0.0084 on a single seed. **With three seeds it is +0.0090 against a 0.0115 floor, and the
+ranges overlap.** We deleted our own best result rather than report it.
+
+Cost is the part a mAP-only table hides: added parameters stay inside the paper's <10%
+claim, but **latency rises 41%** (24.35 → 34.38 ms/img) for no gain at any setting.
+
+### On BDD100K, 14× more data
+
+| run | epochs | mAP50 | Δ |
+|---|---|---|---|
+| bdd_baseline | 50 | 0.3711 | — |
+| bdd_der | 50 | 0.3748 | +0.0037 |
+| bdd_enh | 50 | 0.3733 | +0.0022 |
+| bdd_der_enh | 48 | 0.3732 | +0.0021 |
+
+Still tiny, and the ordering differs from ExDark — `der` leads here and trailed there,
+which is itself evidence these are noise. BDD was chosen for its ground-truth conditions:
+`tod_night` has 3,929 test images so the night claim is testable, while `wx_foggy` has
+**13**, so the fog claim is not, and `evaluate.py` flags any bin under 100.
+
+### Caveats stated before the numbers
+
+- Single seed for most variants; three for `baseline` and `der_enh_sevcond` only.
+- `bdd_der_enh` is 48/50 epochs — the watchdog killed it two short, and it was still
+  improving.
+- 448 px throughout, matching the paper; BDD's traffic lights and signs are a few pixels
+  across at that size, which is why its absolute mAP is far lower.
 
 ## Hardware provenance
 

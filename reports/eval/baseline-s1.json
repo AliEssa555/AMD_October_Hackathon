@@ -1,0 +1,42 @@
+{
+  "variant": "baseline",
+  "seed": 1,
+  "weights": "/work/runs/baseline-s1/weights/best.pt",
+  "overall": {
+    "mAP50": 0.5618739610823126,
+    "mAP50-95": 0.2692879192853628,
+    "precision": 0.6301088005495822,
+    "recall": 0.5218094541139794
+  },
+  "per_class": {
+    "Bicycle": 0.6592749754905933,
+    "Boat": 0.5584110589623918,
+    "Bottle": 0.45955853194324503,
+    "Bus": 0.8041374435329459,
+    "Cat": 0.7831344466645644,
+    "Cup": 0.46765381621481406,
+    "Motorbike": 0.6219860656724348,
+    "People": 0.5176176960679431,
+    "Table": 0.4733583495675215,
+    "car": 0.6422618546334601,
+    "chair": 0.4810598058886315,
+    "dog": 0.274033488349204
+  },
+  "bins": {},
+  "cost": {
+    "params_total": 3007988.0,
+    "params_base": 3007988.0,
+    "params_added": 0.0,
+    "params_added_pct": 0.0,
+    "gflops": 0.0
+  },
+  "environment": {
+    "torch": "2.6.0+git684f6f2",
+    "hip": "6.4.43483-a187df25c",
+    "device": "0",
+    "gpu": "AMD Instinct MI300X VF",
+    "python": "3.12.10",
+    "imgsz": "448"
+  },
+  "epochs": 100
+}

@@ -92,19 +92,60 @@ transformation to every image. And in every variant the change is slightly large
 brightest quartile than the darkest — the opposite of the paper's claim, though the
 per-bin sample is small enough that this is a hint, not a finding.
 
-### 2.2 The entropy intervention never fired
+### 2.2 The entropy intervention, and what happened when it finally fired
 
-Extension E1 adds `entropy_reg` to push the router to commit. `train/ent_loss` logged
-**0.01498** and moved to 0.01496 over 100 epochs. That number is exactly:
+The paper's own fix for a lazy router is an entropy penalty. `der_enh_entreg` ran it at
+0.01 and `train/ent_loss` logged **0.01498**, moving 0.00002 across 100 epochs. That
+number is exactly:
 
 ```
 0.01 × mean(3 × log 4, 3 × log 5) = 0.01 × 1.4979 = 0.014979
 ```
 
-So the term is implemented correctly and is **~100× too weak** — about 0.3% of a detection
-loss of order 2–6. The question "does a sharper router detect better?" was never asked.
-Being able to show the arithmetic is what turns "it didn't work" into "here is precisely
-why, and here is the fix".
+So the term was implemented correctly and was simply **~100× too weak** — about 0.3% of a
+detection loss of order 2–6. The "entropy-aware" claim had never been tested by anyone,
+including the authors.
+
+Running the sweep properly produced the clearest result of the project:
+
+| `entropy_reg` | target | DER routing H | EnhanceNet gate H | mAP50 |
+|---|---|---|---|---|
+| 0.01 | all | 0.9998 | 0.8152 | 0.5850 |
+| 0.1 | all | 0.9996 | 0.8046 | 0.5858 |
+| 0.3 | all | — | — | 0.5819 |
+| 0.5 | all | — | — | 0.5811 |
+| 1.0 | all | 0.6835 | 0.4719 | 0.5756 |
+| **1.0** | **DER only** | — | — | **0.5877** |
+| 5.0 | all | 0.0147 | 0.0052 | 0.4405 |
+| **5.0** | **DER only** | — | — | **0.3220** |
+
+Two things follow.
+
+**The regulariser works.** At weight 5.0 normalised routing entropy falls to 0.0147 —
+one path takes 0.99 and the rest vanish. The router can be made decisive; it simply never
+chooses to be.
+
+**A router that actually routes is catastrophic.** At weight 5.0 targeting DER alone,
+mAP50 falls to **0.3220** — **−0.257** against the baseline's 0.5792. The paper's premise
+is therefore not merely unsupported but contradicted: uniform averaging is not a failure
+to learn routing, it is the behaviour that works, and forcing commitment destroys the
+detector.
+
+#### The confound I introduced, and had to run an experiment to remove
+
+The first sweep pushed **every** routing distribution at once, because `collect_routing`
+gathered from all recording modules. EnhanceNet's gate collapsed alongside DER's router
+(0.80 → 0.47 → 0.005). So the −0.15 at weight 5.0 could not be attributed to routing: it
+might have been the destruction of the one module that *was* working.
+
+`entropy_target: all | der | enhancenet` separates them, and the isolated runs settle it —
+pushing only the router is **worse** (0.3220) than pushing both (0.4405). The damage
+belongs to decisive routing.
+
+This is the part of the project I would most want a reviewer to check, because I built the
+confound myself and would have reported around it if the owner had not asked for another
+run. The lesson is narrow and worth keeping: **a regulariser that touches more than one
+mechanism cannot support a claim about either one.**
 
 ### 2.3 The ablation table, with cost
 
@@ -129,6 +170,27 @@ Its dark-quartile result points the way the paper predicts:
 | der_enh_sevcond | **0.5973** | 0.6550 | 0.5554 | 0.5774 |
 
 **+0.036 on the darkest quartile.** One seed, 164 images per bin — a lead, not a result.
+
+### 2.3b Our own extension did not survive replication
+
+`der_enh_sevcond` — conditioning the gates on a measured severity score, extension E3 —
+was the single delta that cleared the noise floor on one seed: **+0.0084**, with +0.036 on
+the darkest quartile. It looked like the project's one positive finding.
+
+With three seeds it is **+0.0042**, and the ranges overlap heavily:
+
+| variant | seeds | mAP50 range |
+|---|---|---|
+| baseline | 3 | 0.5729–0.5844 |
+| der_enh_sevcond | 3 | 0.5823–0.5932 |
+
+The measured baseline spread is **0.0115** — twice the 0.0056 I had been using as a noise
+floor, which itself came from comparing *different architectures* rather than repeated
+seeds of one. Every single-seed delta in this project is smaller than that.
+
+Deleting our own best result is the clearest argument for the seed budget: three seeds of
+two variants cost about $2 and 25 minutes, and without them the write-up would have
+claimed an improvement that does not exist.
 
 ### 2.4 The noise floor, and why it is stated first
 
@@ -349,6 +411,53 @@ worth keeping, against 8.2 GB if the per-epoch resume snapshots came along.
   used another, because the experiment already existed. I'd been treating 'MLflow has it'
   as a guarantee. Now the teardown script interrogates the store and rewrites the paths,
   and it is verified by opening the copy with the source machine switched off."
+
+### Lesson 8 — Verify content, not syntax; and never write to a path a job is reading
+
+Three failures in one evening, all variations on "I checked the wrong thing".
+
+- **A stub passed my integrity check.** After an interrupted upload I verified the
+  Droplet's files with `py_compile` and `bash -n`, and everything reported OK. It was not:
+  `evaluate.py` there was still the original **6-line stub**, which compiles perfectly.
+  Evaluation then ran, exited 0, and printed nothing at all for twenty minutes of
+  confusion. Comparing `md5sum` against the local files found it in one command.
+- **I wrote to a script while a job was executing it.** An scp of `run_batch.sh` landed
+  mid-batch, bash re-read the file from its old offset, and the log filled with
+  `syntax error near unexpected token ')'`. The results survived by luck. Never push to a
+  path a running job reads from — stage elsewhere and move.
+- **I launched the queue on the host.** `run_queue.sh` chains the whole night, and I ran it
+  outside the container, where there is no torch — the single most important operational
+  fact in this project's own CLAUDE.md. All seven runs failed in four seconds.
+
+That last one cost nothing, and the reason is worth recording: `run_job.sh` refuses to
+start when no ROCm GPU is visible, because "a paid run with no GPU is the single most
+expensive mistake available here". That guard had never fired before. **The cheap guards
+are the ones that pay for themselves on the night you are tired.** `run_queue.sh` now
+refuses to start outside the container and prints the correct relaunch command.
+
+- **Interview framing:** "I had a verification step and it passed on a file that was 1%
+  of its real size, because I checked that it parsed rather than that it was the right
+  file. Checksums are now the check. The related habit: treat anything a running process
+  reads as immutable for the duration."
+
+### Lesson 9 — A table can mislead without a single wrong number
+
+Everything in the first ablation table was computed correctly and it was still not fit to
+show anyone:
+
+- `bdd_baseline` reported "2 seeds" spanning 0.2427–0.3696, because it averaged the real
+  50-epoch run with a 3-epoch throughput test. Both are named `bdd_baseline`.
+- BDD variants showed deltas like **−0.1925** — measured against the *ExDark* baseline,
+  because the aggregator assumed one global reference. The two datasets differ by 0.2 mAP
+  for reasons that have nothing to do with the modules.
+- The noise floor stayed hard-coded at 0.0056 after three real seeds had shown 0.0115.
+- GFLOPs printed `0.00` and latency `nan`, because `contextlib.suppress` swallowed why.
+  A fake zero reads as a measurement; a dash and a stated reason do not.
+
+The fixes are all in `evaluate.py` and pinned by 11 tests. The general point: **the
+reporting layer deserves the same scepticism as the model code**, because it is the part
+anyone actually reads, and a plausible-looking wrong number is harder to catch than a
+crash.
 
 ### Smaller ones, kept because they cost real minutes
 

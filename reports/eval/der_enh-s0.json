@@ -1,12 +1,12 @@
 {
   "variant": "der_enh",
   "seed": 0,
-  "weights": "runs\\from-droplet\\ablation\\der_enh-s0\\weights\\best.pt",
+  "weights": "/work/runs/der_enh-s0/weights/best.pt",
   "overall": {
-    "mAP50": 0.5657135026947563,
-    "mAP50-95": 0.27236212012996064,
-    "precision": 0.6957270185996512,
-    "recall": 0.510642814917764
+    "mAP50": 0.5657142891815629,
+    "mAP50-95": 0.27236222613416916,
+    "precision": 0.6957269371255687,
+    "recall": 0.510642916338936
   },
   "per_class": {
     "Bicycle": 0.629962795548727,
@@ -19,60 +19,24 @@
     "People": 0.5457783465629201,
     "Table": 0.47058674358110764,
     "car": 0.6734322204423364,
-    "chair": 0.492242411011183,
+    "chair": 0.4922518488528622,
     "dog": 0.26603486196682613
   },
-  "bins": {
-    "test_q1": {
-      "mAP50": 0.5553978948462637,
-      "mAP50-95": 0.28354830283271953,
-      "precision": 0.663795039066867,
-      "recall": 0.5162740321511233,
-      "images": 164.0,
-      "low_confidence": 0.0
-    },
-    "test_q2": {
-      "mAP50": 0.6586817260504092,
-      "mAP50-95": 0.30685229911890854,
-      "precision": 0.721238326483977,
-      "recall": 0.5956653244989334,
-      "images": 163.0,
-      "low_confidence": 0.0
-    },
-    "test_q3": {
-      "mAP50": 0.5585807261492416,
-      "mAP50-95": 0.2787751118449151,
-      "precision": 0.6604510324040135,
-      "recall": 0.49767418875631214,
-      "images": 164.0,
-      "low_confidence": 0.0
-    },
-    "test_q4": {
-      "mAP50": 0.5615080124604966,
-      "mAP50-95": 0.2733089418967992,
-      "precision": 0.7176358334997183,
-      "recall": 0.4850415049005595,
-      "images": 164.0,
-      "low_confidence": 0.0
-    }
-  },
+  "bins": {},
   "cost": {
     "params_total": 3294424.0,
     "params_base": 3007988.0,
     "params_added": 286436.0,
     "params_added_pct": 9.522511392997579,
-    "gflops": 4.138946304,
-    "latency_ms_median": 34.375100000033854,
-    "latency_ms_p90": 36.356399999931455,
-    "latency_batch": 1,
-    "latency_half": 0.0
+    "gflops": 0.0
   },
   "environment": {
-    "torch": "2.14.1+cpu",
-    "hip": "None",
-    "device": "cpu",
-    "gpu": "cpu",
-    "python": "3.11.0",
+    "torch": "2.6.0+git684f6f2",
+    "hip": "6.4.43483-a187df25c",
+    "device": "0",
+    "gpu": "AMD Instinct MI300X VF",
+    "python": "3.12.10",
     "imgsz": "448"
-  }
+  },
+  "epochs": 100
 }

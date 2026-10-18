@@ -1,0 +1,74 @@
+{
+  "run": "der_enh_ent10-s0",
+  "images": 64,
+  "per_module": {
+    "DER": {
+      "routing_entropy_norm": 0.6835003676178496,
+      "max_weight": 0.4927817548935612,
+      "min_weight": 0.15894981442640224,
+      "feature_entropy_before": 0.7697153691788117,
+      "feature_entropy_after": 0.7851140904361577,
+      "feature_entropy_delta": 0.015398721257345946,
+      "paths": 4,
+      "verdict": "decisive"
+    },
+    "EnhanceNet": {
+      "routing_entropy_norm": 0.47193808011423327,
+      "max_weight": 0.662507704924792,
+      "min_weight": 0.05107067090995768,
+      "feature_entropy_before": 0.7851140904361577,
+      "feature_entropy_after": 0.7855033258347248,
+      "feature_entropy_delta": 0.00038923539856720407,
+      "paths": 5,
+      "verdict": "decisive"
+    }
+  },
+  "per_dark_bin": {
+    "q1": {
+      "images": 12,
+      "routing_entropy_norm": 0.6067713414679932,
+      "feature_entropy_delta": 0.011184333868893899
+    },
+    "q2": {
+      "images": 13,
+      "routing_entropy_norm": 0.6052240358165334,
+      "feature_entropy_delta": 0.007736085640947119
+    },
+    "q3": {
+      "images": 18,
+      "routing_entropy_norm": 0.5758765292277206,
+      "feature_entropy_delta": 0.006831296095495216
+    },
+    "q4": {
+      "images": 21,
+      "routing_entropy_norm": 0.5456706780046109,
+      "feature_entropy_delta": 0.007022388738631789
+    }
+  },
+  "per_layer": {
+    "model.4.enhance.der": {
+      "routing_entropy_norm": 0.9995461190119386,
+      "feature_entropy_delta": 0.019892566509952303
+    },
+    "model.4.enhance.enh": {
+      "routing_entropy_norm": 0.3868744987079611,
+      "feature_entropy_delta": -1.1909993190784007e-05
+    },
+    "model.6.enhance.der": {
+      "routing_entropy_norm": 0.9997662324458361,
+      "feature_entropy_delta": 0.0015951506993587827
+    },
+    "model.6.enhance.enh": {
+      "routing_entropy_norm": 0.9833519263193011,
+      "feature_entropy_delta": 0.00011772198013204616
+    },
+    "model.9.enhance.der": {
+      "routing_entropy_norm": 0.051188751395774196,
+      "feature_entropy_delta": 0.02470844656272675
+    },
+    "model.9.enhance.enh": {
+      "routing_entropy_norm": 0.04558781531543765,
+      "feature_entropy_delta": 0.00106189420876035
+    }
+  }
+}

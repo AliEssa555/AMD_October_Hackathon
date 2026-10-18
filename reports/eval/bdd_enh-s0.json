@@ -1,0 +1,37 @@
+{
+  "variant": "bdd_enh",
+  "seed": 0,
+  "weights": "/work/runs/bdd_enh-s0/weights/best.pt",
+  "overall": {
+    "mAP50": 0.369549883216371,
+    "mAP50-95": 0.2178077222905197,
+    "precision": 0.6511985777233,
+    "recall": 0.34072775985664616
+  },
+  "per_class": {
+    "rider": 0.19807992077668996,
+    "car": 0.6569080419059989,
+    "truck": 0.4942367917770022,
+    "bus": 0.47815667507967774,
+    "train": 0.0,
+    "traffic light": 0.34983441476778343,
+    "traffic sign": 0.40963333820744485
+  },
+  "bins": {},
+  "cost": {
+    "params_total": 3077507.0,
+    "params_base": 3007598.0,
+    "params_added": 69909.0,
+    "params_added_pct": 2.3244130365826816,
+    "gflops": 0.0
+  },
+  "environment": {
+    "torch": "2.6.0+git684f6f2",
+    "hip": "6.4.43483-a187df25c",
+    "device": "0",
+    "gpu": "AMD Instinct MI300X VF",
+    "python": "3.12.10",
+    "imgsz": "448"
+  },
+  "epochs": 50
+}

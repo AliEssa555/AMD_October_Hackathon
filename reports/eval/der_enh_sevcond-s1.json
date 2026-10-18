@@ -1,0 +1,42 @@
+{
+  "variant": "der_enh_sevcond",
+  "seed": 1,
+  "weights": "/work/runs/der_enh_sevcond-s1/weights/best.pt",
+  "overall": {
+    "mAP50": 0.5709391748803562,
+    "mAP50-95": 0.273308263704853,
+    "precision": 0.646257923659923,
+    "recall": 0.5291124718372554
+  },
+  "per_class": {
+    "Bicycle": 0.7168295741059615,
+    "Boat": 0.5533491172987139,
+    "Bottle": 0.4946861196524839,
+    "Bus": 0.8223548585287992,
+    "Cat": 0.7669952109179163,
+    "Cup": 0.4686609371598006,
+    "Motorbike": 0.6502402950916684,
+    "People": 0.5233542430966944,
+    "Table": 0.47561850952394236,
+    "car": 0.6346222288691086,
+    "chair": 0.4735602669454476,
+    "dog": 0.2709987373737373
+  },
+  "bins": {},
+  "cost": {
+    "params_total": 3294616.0,
+    "params_base": 3007988.0,
+    "params_added": 286628.0,
+    "params_added_pct": 9.528894397185095,
+    "gflops": 0.0
+  },
+  "environment": {
+    "torch": "2.6.0+git684f6f2",
+    "hip": "6.4.43483-a187df25c",
+    "device": "0",
+    "gpu": "AMD Instinct MI300X VF",
+    "python": "3.12.10",
+    "imgsz": "448"
+  },
+  "epochs": 100
+}
