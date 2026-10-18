@@ -220,7 +220,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     tracker.attach(trainer)
 
-    trainer.train()
+    # Explicit braces for the belt in tracking.py: Ultralytics' teardown callback fires
+    # only on the happy path, so without this a crash is recorded as a successful run.
+    try:
+        trainer.train()
+    except BaseException as exc:
+        tracker.fail(reason="exception-in-train", exc=exc)
+        raise
     return 0
 
 

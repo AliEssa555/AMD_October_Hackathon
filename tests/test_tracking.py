@@ -183,3 +183,57 @@ def test_enabled_tracker_registers_every_callback():
 
 def test_run_name_follows_the_spec_convention():
     assert MlflowTracker(variant="der_enh", seed=1).run_name == "der_enh-s1"
+
+
+class TestCrashIsRecordedAsFailure:
+    """A crashed run must not read as a successful one.
+
+    Ultralytics calls `run_callbacks("teardown")` only at the end of the happy path
+    (engine/trainer.py:527, after on_train_end, not in a finally), so an exception skips
+    it and MLflow's atexit hook closes the dangling run as FINISHED. Seven AMP-crashed
+    runs sat in the database labelled FINISHED with zero metrics before this was fixed.
+    """
+
+    def test_fail_exists_and_is_not_the_ultralytics_hook(self):
+        assert hasattr(MlflowTracker, "fail")
+        assert hasattr(MlflowTracker, "teardown")
+
+    def test_fail_is_a_no_op_once_completed(self):
+        """on_train_end sets completed; fail must not then overwrite a good run."""
+        t = MlflowTracker(variant="baseline", seed=0)
+        t.completed = True
+        t.fail(reason="should be ignored")  # must not raise, must not touch MLflow
+
+    def test_fail_is_a_no_op_when_disabled(self):
+        t = MlflowTracker(variant="baseline", seed=0, enabled=False)
+        t.fail(reason="should be ignored")
+
+    def test_fail_never_raises_even_with_mlflow_broken(self, monkeypatch):
+        """It runs on paths that are already failing; it must never mask the traceback."""
+        import yolo_der.tracking as tracking
+
+        def boom(*a, **k):
+            raise RuntimeError("tracking server gone")
+
+        monkeypatch.setattr(tracking.mlflow, "active_run", boom)
+        t = MlflowTracker(variant="baseline", seed=0)
+        t.fail(reason="x", exc=ValueError("original"))
+        assert t.completed, "a failed fail() must still stop later attempts"
+
+    def test_train_cli_marks_the_run_failed_on_exception(self):
+        """The explicit belt: train.py must call fail() before re-raising."""
+        from pathlib import Path
+
+        src = Path("src/yolo_der/train.py").read_text(encoding="utf-8")
+        assert "tracker.fail(" in src
+        i, j = src.index("trainer.train()"), src.index("tracker.fail(")
+        assert i < j, "fail() must be in the except block after train()"
+        assert "raise" in src[j : j + 200], "the original exception must be re-raised"
+
+    def test_atexit_backstop_is_registered(self):
+        """For hard exits that never unwind -- e.g. SIGTERM from the watchdog."""
+        from pathlib import Path
+
+        src = Path("src/yolo_der/tracking.py").read_text(encoding="utf-8")
+        assert "atexit.register(self.fail" in src
+        assert "_atexit_registered" in src

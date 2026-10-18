@@ -25,6 +25,7 @@ is what keeps hard rule 0.4 true. If ``SPACES_BUCKET`` and credentials ever appe
 
 from __future__ import annotations
 
+import atexit
 import contextlib
 import os
 import platform
@@ -196,6 +197,7 @@ class MlflowTracker:
         self.enabled = enabled
         self.run_id: str | None = None
         self.completed = False
+        self._atexit_registered = False
         self._epoch_clock = time.time()
 
     # ---------------------------------------------------------------- plumbing
@@ -245,6 +247,14 @@ class MlflowTracker:
             **environment_tags(),
         }
         mlflow.set_tags({sanitise_key(k): v for k, v in tags.items()})
+
+        # Registered after MLflow's own atexit hook, and atexit runs LIFO, so on a hard
+        # exit this marks the run FAILED before MLflow can mark it FINISHED. The belt to
+        # train.py's braces: this one also covers os._exit-free hard stops like SIGTERM
+        # from the watchdog.
+        if not self._atexit_registered:
+            atexit.register(self.fail, "process-exit-before-train-end")
+            self._atexit_registered = True
 
         if not resumed:
             # Params are immutable in MLflow; re-logging them on resume raises.
@@ -320,16 +330,42 @@ class MlflowTracker:
         mlflow.end_run()
 
     def teardown(self, trainer: YoloDERTrainer) -> None:
-        """Mark the run FAILED if training never reached :meth:`on_train_end`.
+        """Ultralytics' own teardown hook. Kept, but it is not the one that matters.
 
-        MLflow installs an ``atexit`` hook that ends a dangling active run as **FINISHED**,
-        so a crashed run is otherwise indistinguishable from a good one -- exactly backwards
-        when you are triaging a Droplet that died overnight.
+        `BaseTrainer._do_train` calls ``run_callbacks("teardown")`` at the end of the happy
+        path -- engine/trainer.py:527, after ``on_train_end``, **not** in a ``finally`` --
+        so any exception skips it. Verified against Ultralytics 8.3.253 after seven
+        AMP-crashed runs showed up in the database as FINISHED with zero metrics.
+        :meth:`fail` is the method that handles a crash; this one only tidies the ordinary
+        path.
         """
-        if self.completed or mlflow.active_run() is None:
+        self.fail(reason="teardown-without-train-end")
+
+    def fail(self, reason: str = "crashed", exc: BaseException | None = None) -> None:
+        """End the active run as FAILED, unless it already finished cleanly.
+
+        Idempotent and never raises: it runs on paths that are already failing, and a
+        tracking error there would mask the real traceback.
+
+        MLflow installs an ``atexit`` hook that ends a dangling run as **FINISHED**, which
+        is exactly backwards when triaging a Droplet that died overnight. :meth:`attach`
+        registers this *after* MLflow's hook, and ``atexit`` runs handlers last-in-first-out,
+        so this one wins.
+        """
+        if self.completed or not self.enabled:
             return
-        mlflow.set_tag("crashed", "true")
-        mlflow.end_run(status="FAILED")
+        try:
+            if mlflow.active_run() is None:
+                return
+            mlflow.set_tag("crashed", "true")
+            mlflow.set_tag("crash_reason", str(reason)[:200])
+            if exc is not None:
+                mlflow.set_tag("crash_error", f"{type(exc).__name__}: {exc}"[:500])
+            mlflow.end_run(status="FAILED")
+        except Exception:  # noqa: BLE001 - never mask the failure being reported
+            pass
+        finally:
+            self.completed = True
 
     # ----------------------------------------------------------------- helpers
 
