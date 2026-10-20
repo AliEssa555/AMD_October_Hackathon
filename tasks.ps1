@@ -60,11 +60,32 @@ switch ($Target) {
     }
     'export'  { Invoke-Step $py (@('-m', 'yolo_der.export') + $Rest) }
     'api-dev' { Push-Location api; try { Invoke-Step 'npm' @('run', 'dev') } finally { Pop-Location } }
-    # The infra/*.sh scripts are bash; run them through Git Bash.
-    'launch'  { Invoke-Step 'bash' (@('infra/launch_gpu.sh') + $Rest) }
-    'reap'    { Invoke-Step 'bash' @('infra/reaper.sh') }
+
+    # --- browsing the runs pulled off the Droplet -----------------------------
+    # The Droplet is gone; these read the copy scripts/collect_results.py made.
+    'runs'     { Invoke-Step $py (@('-m', 'scripts.view_runs') + $Rest) }
+    'runs-sum' { Invoke-Step $py @('-m', 'scripts.view_runs', '--summary') }
+    'curve'    { Invoke-Step $py (@('-m', 'scripts.view_runs', '--curves') + $Rest) }
+    'report'   {
+        Invoke-Step $py @('-m', 'yolo_der.evaluate', '--aggregate', '--reports', 'reports/eval', '--out', 'reports')
+        Invoke-Step $py @('-m', 'yolo_der.analysis.plots', '--reports', 'reports', '--out', 'reports/figures')
+    }
+
+    # --- cloud -----------------------------------------------------------------
+    # launch_gpu.sh and reaper.sh were deleted, not stubbed: both need a DO API
+    # token, which this account cannot issue (CLAUDE.md, approved deviation from
+    # rule 0.2). Launching is a console action documented in docs/MANUAL_LAUNCH.md.
+    'send'    { Invoke-Step 'bash' (@('infra/send_repo.sh') + $Rest) }
+    'fetch'   { Invoke-Step 'bash' (@('infra/fetch_results.sh') + $Rest) }
     'status'  { Invoke-Step 'bash' @('infra/status.sh') }
     default {
-        Write-Host 'Targets: setup lint fmt test test-all data smoke tunnel launch reap status export api-dev'
+        Write-Host 'Targets:'
+        Write-Host '  setup lint fmt test test-all data smoke'
+        Write-Host '  runs            MLflow UI on the pulled store'
+        Write-Host '  runs-sum        one-screen summary of every run'
+        Write-Host '  curve <run>     per-epoch mAP50 for one run, e.g. .\tasks.ps1 curve der_enh-s0'
+        Write-Host '  report          rebuild reports/ablation.md and the figures'
+        Write-Host '  send <host>     copy the repo to a Droplet    fetch <host>  pull results back'
+        Write-Host '  export api-dev status tunnel'
     }
 }

@@ -136,6 +136,36 @@ dashboard/          static demo UI served by the API
 docs/PROJECT_SPEC.md   the full build spec
 ```
 
+## Browsing the runs
+
+All 29 training runs are on disk; the Droplet is gone. The MLflow store was copied with
+`scripts/collect_results.py`, which rewrote every artifact path to be relative, so it
+opens anywhere.
+
+```powershell
+.\tasks.ps1 runs            # MLflow UI at http://127.0.0.1:5000
+.\tasks.ps1 runs-sum        # one screen: every run, status, mAP50, epochs
+.\tasks.ps1 curve der_enh_deronly50-s0   # per-epoch mAP50 as a sparkline
+.\tasks.ps1 report          # rebuild reports/ablation.md and the figures
+```
+
+The launcher runs `mlflow ui` **from inside the store directory**. That matters: MLflow
+resolves relative artifact paths against the server's working directory, so starting it
+from the repo root instead shows every run with an empty artifact list and a model
+registry full of dead links.
+
+If the store is missing, extract it first:
+
+```powershell
+.venv\Scripts\python.exe scripts\unbundle.py `
+  runs\from-droplet\takehome-complete.tar.zst --into runs\from-droplet\final
+```
+
+What you get: 29 runs, 30,149 metric points, 22 registered model versions, per-epoch
+curves, confusion matrices, PR curves and the prediction previews for every run. Six runs
+are deliberately marked FAILED with `crash_reason=amp-dtype-float-vs-half` — the record of
+a real bug, kept rather than deleted.
+
 ## Quickstart
 
 ```bash
